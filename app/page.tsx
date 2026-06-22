@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
 } from "react";
+import { supabase } from "../lib/supabase";
 import * as XLSX from "xlsx";
 type ArchiveItem = {
   serviceYear: string;
@@ -332,6 +333,8 @@ const getMonthsForServiceYear = (
     { user: string; action: string; date: string }[]
   >([]);
 
+
+
   const logAction = (action: string) => {
     if (!currentUser) return;
 
@@ -346,8 +349,6 @@ const getMonthsForServiceYear = (
      ].slice(-300)
     );
   };
-
-
 
   useEffect(() => {
     localStorage.setItem(
@@ -512,6 +513,25 @@ const getMonthsForServiceYear = (
       JSON.stringify(activityLog)
     );
   }, [activityLog]);
+
+  useEffect(() => {
+    const loadPeople = async () => {
+      const { data, error } = await supabase
+        .from("people")
+        .select("*");
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setPeopleList(data as Person[]);
+      }
+    };
+
+    loadPeople();
+  }, []);
 
   const filteredGroupPeople = peopleList .filter(
     (person) =>
@@ -1000,14 +1020,14 @@ const getMonthsForServiceYear = (
           <div className="bg-white/95 p-5 rounded-[28px] shadow-sm max-w-md">
 
           <input
-            className="w-full mb-3 px-7 py-4 rounded-full bg-[#F3FAFF]"
+            className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
             placeholder="Логин"
             value={login}
             onChange={(e) => setLogin(e.target.value)}
           />
 
           <input
-            className="w-full mb-3 px-7 py-4 rounded-full bg-[#F3FAFF]"
+            className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
             placeholder="Пароль"
             type="password"
             value={password}
@@ -1111,7 +1131,7 @@ const getMonthsForServiceYear = (
           onClick={() =>
             setShowPioneerReport(false)
           }
-          className="mb-4 rounded-2xl bg-white px-4 py-2 shadow-sm"
+          className="mb-4 rounded-2xl bg-white px-4 py-2 text-[#426B8E] shadow-sm"
         >
           ← Назад
         </button>
@@ -1206,8 +1226,22 @@ const getMonthsForServiceYear = (
                 </select>
 
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                      if (!newName) return;
+                     const { error } = await supabase
+                      .from("people")
+                      .insert([
+                        {
+                          name: newName,
+                          status: newStatus,
+                          group_name: selectedGroup,
+                        },
+                      ]);
+
+                    if (error) {
+                      console.error(error);
+                      return;
+                    }
 
                     setPeopleList([
                        ...peopleList,
@@ -1236,7 +1270,7 @@ const getMonthsForServiceYear = (
         <div className="grid gap-6 lg:grid-cols-2">
 
           <div 
-            className="rounded-[32px] bg-white p-5 shadow-sm bg-cover bg-center"
+            className="rounded-[32px] bg-white p-3 shadow-sm bg-cover bg-center"
             style={{
               backgroundImage: "url('/image.png')",
             }}
@@ -2060,7 +2094,7 @@ const getMonthsForServiceYear = (
                   onChange={(e) =>
                     setArchiveSearch(e.target.value)
                   }
-                  className="mb-4 w-full rounded-2xl bg-[#FAFCFE] px-4 py-3 outline-none"
+                  className="mb-4 w-full rounded-2xl bg-[#FAFCFE] px-4 py-3 text-[#426B8E] outline-none placeholder:text-slate-400"
                 />
 
                 <div className="space-y-3">
