@@ -524,6 +524,7 @@ const getMonthsForServiceYear = (
         console.error(error);
         return;
       }
+      console.log("SUPABASE VERCEL DATA", data);
 
       if (data) {
         setPeopleList(data as Person[]);
