@@ -569,6 +569,8 @@ const getMonthsForServiceYear = (
           regulars: item.regulars,
           regularHours: item.regular_hours,
           regularStudies: item.regular_studies,
+          regularPioneerDetails:
+            item.regular_pioneer_details ?? [],
 
           totalHours: item.total_hours,
           totalStudies: item.total_studies,
@@ -1005,6 +1007,7 @@ const getMonthsForServiceYear = (
           regulars: regularPioneersCount,
           regular_hours: regularPioneerHours,
           regular_studies: regularStudies,
+          regular_pioneer_details: regularPioneerDetails,
 
           total_hours: totalGroupHours,
           total_studies: totalStudies,
