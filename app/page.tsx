@@ -8,6 +8,7 @@ import {
 import { supabase } from "../lib/supabase";
 import * as XLSX from "xlsx";
 type ArchiveItem = {
+  id?: string;
   serviceYear: string;
   month: string;
   group: string;
@@ -549,6 +550,7 @@ const getMonthsForServiceYear = (
 
       if (data) {
         const archiveData = data.map((item) => ({
+          id: item.id,
           serviceYear: item.service_year,
           month: item.month,
           group: item.group_name,
@@ -2263,12 +2265,31 @@ const getMonthsForServiceYear = (
                         </div>
 
                         <button
-                          onClick={() => {
-                            if (window.confirm("Удалить запись из архива?")) {
-                              setArchive(
-                                archive.filter((_, i) => i !== index)
-                              );
+                          onClick={async () => {
+                            if (!window.confirm("Удалить запись из архива?")) {
+                              return;
                             }
+
+                            const archiveId = item.id;
+
+                            if (!archiveId) {
+                              return;
+                            }
+
+                            const { error } = await supabase
+                              .from("archive")
+                              .delete()
+                              .eq("id", archiveId);
+
+                            if (error) {
+                              console.error(error);
+                              alert("Ошибка удаления");
+                              return;
+                            }
+
+                            setArchive(
+                              archive.filter((a) => a.id !== archiveId)
+                            );
                           }}
                           className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600"
                         >
