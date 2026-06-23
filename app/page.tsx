@@ -18,6 +18,7 @@ type ArchiveItem = {
   unbaptizedStudies: number;
 
   publishers: number;
+  publisherStudies: number;
 
   inactive: number;
 
@@ -39,6 +40,8 @@ type ArchiveItem = {
   date: string;
 };
 type Person = {
+    id?: string;
+
     name: string;
     status: string;
     hours: number;
@@ -261,9 +264,7 @@ const getMonthsForServiceYear = (
     storage.get("selectedGroup", "Группа 1")
   );
 
-  const [archive, setArchive] = useState<ArchiveItem[]>(() =>
-    storage.get<ArchiveItem[]>("archive", [])
-  );
+  const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [archiveSearch, setArchiveSearch] =
     useState("");
 
@@ -538,7 +539,8 @@ const getMonthsForServiceYear = (
     const loadArchive = async () => {
       const { data, error } = await supabase
         .from("archive")
-        .select("*");
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
         console.error(error);
@@ -546,7 +548,35 @@ const getMonthsForServiceYear = (
       }
 
       if (data) {
-        setArchive(data as ArchiveItem[]);
+        const archiveData = data.map((item) => ({
+          serviceYear: item.service_year,
+          month: item.month,
+          group: item.group_name,
+
+          reports: item.reports,
+
+          publishers: item.publishers,
+          publisherStudies: item.publisher_studies,
+          inactive: item.inactive,
+
+          unbaptized: item.unbaptized,
+          unbaptizedStudies: item.unbaptized_studies,
+
+          assistants: item.assistants,
+          assistantHours: item.assistant_hours,
+          assistantStudies: item.assistant_studies,
+
+          regulars: item.regulars,
+          regularHours: item.regular_hours,
+          regularStudies: item.regular_studies,
+
+          totalHours: item.total_hours,
+          totalStudies: item.total_studies,
+
+          date: item.date,
+        }));
+        console.log("ARCHIVE DATA", archiveData);
+        setArchive(archiveData as ArchiveItem[]);
       }
     };
 
@@ -931,6 +961,7 @@ const getMonthsForServiceYear = (
       reports: reportsSubmitted,
 
       publishers: publishersCount,
+      publisherStudies: publisherStudies,
       inactive: inactiveCount,
 
       unbaptized: unbaptizedCount,
@@ -954,10 +985,31 @@ const getMonthsForServiceYear = (
       .from("archive")
       .insert([
         {
-          name: selectedMonth,
-          status: selectedYear,
+          service_year: selectedYear,
+          month: selectedMonth,
           group_name: selectedGroup,
-          archived_at: new Date().toISOString(),
+
+          reports: reportsSubmitted,
+
+          publishers: publishersCount,
+          publisher_studies: publisherStudies,
+          inactive: inactiveCount,
+
+          unbaptized: unbaptizedCount,
+          unbaptized_studies: unbaptizedStudies,
+
+          assistants: assistantPioneersCount,
+          assistant_hours: assistantHours,
+          assistant_studies: assistantStudies,
+
+          regulars: regularPioneersCount,
+          regular_hours: regularPioneerHours,
+          regular_studies: regularStudies,
+
+          total_hours: totalGroupHours,
+          total_studies: totalStudies,
+
+          date: new Date().toISOString(),
         },
       ]);
 
@@ -1767,12 +1819,27 @@ const getMonthsForServiceYear = (
                                   )}
                                   <hr className="my-2" />
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const confirmDelete = window.confirm(
                                         `Удалить карточку "${person.name}"?`
                                       );
                                       if (confirmDelete) {
-                                        setPeopleList(peopleList.filter((p) => p.name !== person.name));
+                                        const { error } = await supabase
+                                          .from("people")
+                                          .delete()
+                                          .eq("id", person.id);
+
+                                        if (error) {
+                                          console.error(error);
+                                          return;
+                                        }
+
+                                        setPeopleList(
+                                          peopleList.filter(
+                                            (p) => p.id !== person.id
+                                          )
+                                        );
+
                                         setOpenMenu(null);
                                       }
                                     }}
@@ -2167,6 +2234,8 @@ const getMonthsForServiceYear = (
 
                         <div className="text-sm text-slate-500">
                           Возвещатели: {item.publishers}
+                           {" "}
+                            ({item.publisherStudies} изуч.)
                         </div>
 
                         <div className="text-sm text-slate-500">
@@ -2175,6 +2244,7 @@ const getMonthsForServiceYear = (
 
                         <div className="text-sm text-slate-500">
                           Некрещёные: {item.unbaptized}
+                          ({item.unbaptizedStudies} изуч.)
                         </div>
 
                         <div className="text-sm text-slate-500">
