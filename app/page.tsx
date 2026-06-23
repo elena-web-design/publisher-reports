@@ -524,7 +524,7 @@ const getMonthsForServiceYear = (
         console.error(error);
         return;
       }
-      console.log("SUPABASE VERCEL DATA", data);
+
 
       if (data) {
         setPeopleList(data as Person[]);
@@ -532,6 +532,25 @@ const getMonthsForServiceYear = (
     };
 
     loadPeople();
+  }, []);
+
+  useEffect(() => {
+    const loadArchive = async () => {
+      const { data, error } = await supabase
+        .from("archive")
+        .select("*");
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setArchive(data as ArchiveItem[]);
+      }
+    };
+
+    loadArchive();
   }, []);
 
   const filteredGroupPeople = peopleList .filter(
@@ -872,7 +891,7 @@ const getMonthsForServiceYear = (
     unbaptizedStudies;
 
   
-  const saveMonthToArchive = () => {
+  const saveMonthToArchive = async () => {
     const alreadyExists = archive.some(
       (item) =>
         item.serviceYear === selectedYear &&
@@ -931,6 +950,22 @@ const getMonthsForServiceYear = (
 
       date: new Date().toISOString(),
     };
+    const { error } = await supabase
+      .from("archive")
+      .insert([
+        {
+          name: selectedMonth,
+          status: selectedYear,
+          group_name: selectedGroup,
+          archived_at: new Date().toISOString(),
+        },
+      ]);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
     setArchive((prev) => [...prev, archiveItem]);
   };
   const exportToExcel = () => {
