@@ -6,9 +6,10 @@ import {
   useRef,
 } from "react";
 import { supabase } from "../lib/supabase";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 type ArchiveItem = {
   id?: string;
+
   serviceYear: string;
   month: string;
   group: string;
@@ -42,6 +43,7 @@ type ArchiveItem = {
 };
 type Person = {
     id?: string;
+    event?: string;
 
     name: string;
     status: string;
@@ -49,23 +51,7 @@ type Person = {
     participation: string;
     group: string;
   };
-const people = [
-  {
-    name: "Иванова Мария",
-    status: "publisher",
-    hours: 30,
-    participation: "Да",
-    group: "Группа 1",
-  },
 
-  {
-    name: "Петров Сергей",
-    status: "regular_pioneer",
-    hours: 72,
-    participation: "",
-    group: "Группа 1",
-  },
-];
 
 const storage = {
   get<T>(key: string, fallback: T): T {
@@ -128,6 +114,18 @@ export default function Home() {
   "Август",
 ];
 
+const [selectedPerson, setSelectedPerson] =
+  useState<Person | null>(null);
+
+const [showExportModal, setShowExportModal] =
+  useState(false);
+
+const [exportType, setExportType] = useState<
+  "serviceYear" | "lastSixMonths"
+>("serviceYear");
+
+const [personHistory, setPersonHistory] = useState<any[]>([]);
+
 const getMonthsForServiceYear = (
     serviceYear: string
   ) => {
@@ -144,6 +142,56 @@ const getMonthsForServiceYear = (
       return `${month} ${year}`;
     });
   };
+
+  const isArchiveMonth = (
+    selectedMonth: string
+  ) => {
+    const monthNames = [
+      "Январь",
+      "Февраль",
+      "Март",
+      "Апрель",
+      "Май",
+      "Июнь",
+      "Июль",
+      "Август",
+      "Сентябрь",
+      "Октябрь",
+      "Ноябрь",
+      "Декабрь",
+    ];
+
+    const [monthName, yearString] = selectedMonth.split(" ");
+    const reportDate = new Date(
+      Number(yearString),
+      monthNames.indexOf(monthName),
+      1
+    );
+
+    const now = new Date();
+
+    const currentMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+    const previousMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1
+    );
+
+    if (
+      reportDate.getTime() === currentMonth.getTime() ||
+      reportDate.getTime() === previousMonth.getTime()
+    ) {
+      return false;
+    }
+
+    return reportDate < previousMonth;
+  };
+
   const allMonths = serviceYears.flatMap((year) =>
     getMonthsForServiceYear(year).map((month) => ({
       year,
@@ -151,9 +199,7 @@ const getMonthsForServiceYear = (
     }))
   );
 
-  const [peopleList, setPeopleList] = useState<Person[]>(() =>
-    storage.get<Person[]>("peopleList", people)
-  );
+  const [peopleList, setPeopleList] = useState<Person[]>([]);
 
   
 
@@ -187,9 +233,6 @@ const getMonthsForServiceYear = (
     storage.get("selectedMonth", "Сентябрь 2025")
   );
 
-  const [showPioneerReport, setShowPioneerReport] =
-   useState(false);
-
   const normalizeYear = (year: string) =>
     year.replace("–", "-");
 
@@ -219,6 +262,7 @@ const getMonthsForServiceYear = (
   };
 
   const isInactive = (person: Person) => {
+
     if (
       person.status !== "publisher" &&
       person.status !== "unbaptized_publisher"
@@ -226,10 +270,10 @@ const getMonthsForServiceYear = (
       return false;
     }
 
-    let consecutiveMissed = 0;
-    let inactive = false;
+    let missed = 0;
 
     for (const item of allMonths) {
+
       const key = buildKey(
         item.year,
         item.month,
@@ -238,22 +282,25 @@ const getMonthsForServiceYear = (
 
       const value = participation[key];
 
-      if (value === "Да") {
-        consecutiveMissed = 0;
-        inactive = false;
+      
+      if (value === undefined) {
         continue;
       }
 
       if (value === "Нет") {
-        consecutiveMissed++;
+        missed++;
+      } else {
+        missed = 0;
       }
 
-      if (consecutiveMissed >= 6) {
-        inactive = true;
+      if (missed >= 6) {
+        return true;
       }
+
     }
 
-    return inactive;
+    return false;
+
   };
 
   const inactiveCount =
@@ -269,33 +316,6 @@ const getMonthsForServiceYear = (
   const [archiveSearch, setArchiveSearch] =
     useState("");
 
-  const yearlyPioneers = peopleList
-    .filter(
-      (person) =>
-        person.status === "regular_pioneer"
-    )
-    .map((person) => ({
-      name: person.name,
-
-      hours: archive
-        .filter(
-          (item) =>
-            item.serviceYear === selectedYear
-        )
-        .reduce((sum, item) => {
-          const pioneer =
-            item.regularPioneerDetails?.find(
-              (p: any) =>
-                p.name === person.name
-            );
-
-          return (
-            sum +
-            (pioneer?.hours || 0)
-          );
-        }, 0),
-    }));
-
   const [openMenu, setOpenMenu] =
     useState<number | null>(null);
   const [openStatusMenu, setOpenStatusMenu] =
@@ -307,8 +327,6 @@ const getMonthsForServiceYear = (
   const fileInputRef =
     useRef<HTMLInputElement>(null);
 
-  const [statusMenu, setStatusMenu] =
-    useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -317,40 +335,203 @@ const getMonthsForServiceYear = (
   const [password, setPassword] = useState("");
 
   const USERS = [
-    { login: "group1", password: "12345", name: "Группа 1" },
-    { login: "group2", password: "12345", name: "Группа 2" },
-    { login: "secretary", password: "12345", name: "Секретарь" },
+    { login: "Группа 1", password: "12345", name: "Группа 1" },
+    { login: "Группа 2", password: "12345", name: "Группа 2" },
+    { login: "Группа 3", password: "12345", name: "Группа 3" },
+    { login: "Группа 4", password: "12345", name: "Группа 4" },
+    { login: "Группа 5", password: "12345", name: "Группа 5" },
+    { login: "Группа 6", password: "12345", name: "Группа 6" },
+
+    { login: "Секретарь", password: "12345", name: "Секретарь" },
   ];
 
   const [currentPage, setCurrentPage] = useState<
-    "groups" | "people"
+    "groups" | "people"| "journal"
   >("groups");
+
+  const [groups, setGroups] = useState<
+    { id: string; name: string }[]
+  >([]);
 
   const [currentUser, setCurrentUser] = useState<null | {
     login: string;
     name: string;
   }>(null);
 
+  const isSecretary =
+    currentUser?.name === "Секретарь";
+
   const [activityLog, setActivityLog] = useState<
     { user: string; action: string; date: string }[]
   >([]);
 
+  const [openGroupMenu, setOpenGroupMenu] =
+    useState<string | null>(null);
 
-
-  const logAction = (action: string) => {
+ const logAction = async (action: string) => {
     if (!currentUser) return;
 
-    setActivityLog((prev) =>
-      [
-       ...prev,
-       {
-          user: currentUser.name,
-          action,
-          date: new Date().toISOString(),
-       },
-     ].slice(-300)
-    );
+    const logItem = {
+      user: currentUser.name,
+      action,
+      date: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("activity_log")
+      .insert([
+        {
+          user_name: logItem.user,
+          action: logItem.action,
+          date: logItem.date,
+        },
+      ]);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setActivityLog((prev) => [...prev, logItem]);
   };
+
+  const savePersonHistory = async (
+    person: Person,
+    month: string,
+    serviceYear: string
+  ) => {
+    const key = monthKey(person.name);
+    const { data: previousRecord } = await supabase
+    .from("person_history")
+    .select(`
+      status,
+      assistant_pioneer,
+      inactive
+    `)
+    .eq("person_id", person.id)
+    .eq("service_year", serviceYear)
+    .eq("month", month)
+    .maybeSingle();
+
+    const previousStatus = previousRecord?.status ?? null;
+
+    let event: string | null = null;
+
+    if (
+      previousStatus === "unbaptized_publisher" &&
+      person.status === "publisher"
+    ) {
+      event = "Крестился";
+    }
+
+   
+    else if (
+      previousStatus !== "regular_pioneer" &&
+      person.status === "regular_pioneer"
+    ) {
+      event = "Стал О П";
+    }
+
+   
+    else if (
+      previousStatus === "regular_pioneer" &&
+      person.status !== "regular_pioneer"
+    ) {
+      event = "Перестал быть О П";
+    }
+
+    const historyItem = {
+      person_id: person.id,
+      person_name: person.name,
+
+      group_name: person.group || "Группа 1",
+
+      service_year: serviceYear,
+      month,
+
+      status: person.status,
+
+      participation:
+        participation[key] || "Нет",
+
+      hours:
+        monthlyHours[key] || 0,
+
+      studies:
+        bibleStudies[key] || 0,
+
+      assistant_pioneer:
+        assistantMonth[key] || false,
+
+      inactive:
+        isInactive(person),
+
+      note:
+        notes[key] || "",
+
+      event,
+    };
+
+    const { error } = await supabase
+      .from("person_history")
+      .upsert(
+        [historyItem],
+        {
+          onConflict:
+            "person_id,service_year,month",
+        }
+      );
+
+   if (error) {
+      console.error(
+        "Ошибка сохранения истории:",
+        JSON.stringify(error, null, 2)
+      );
+
+      return;
+    }
+  };
+
+  const loadPersonHistory = async (
+    personId: string
+  ) => {
+
+  const { data, error } = await supabase
+    .from("person_history")
+    .select("*")
+    .eq("person_id", personId)
+    .order("created_at", {
+      ascending: false,
+    });
+
+  if (error) {
+    console.error(
+      "Ошибка загрузки истории:",
+      error
+    );
+    return;
+  }
+
+  setPersonHistory(data || []);
+};
+
+const loadAllHistory = async () => {
+
+  const { data, error } = await supabase
+    .from("person_history")
+    .select("*");
+
+  if (error) {
+    console.error(
+      "Ошибка загрузки всей истории:",
+      error
+    );
+    return [];
+  }
+
+  return data || [];
+
+};
 
   useEffect(() => {
     localStorage.setItem(
@@ -418,6 +599,14 @@ const getMonthsForServiceYear = (
       name: user.name,
     });
 
+    localStorage.setItem(
+      "currentUser",
+      JSON.stringify({
+        login: user.login,
+        name: user.name,
+      })
+    );
+
     setIsLoggedIn(true);
   };
 
@@ -426,16 +615,12 @@ const getMonthsForServiceYear = (
   }, []);
   
   const safeParticipation = participation ?? {};
-  const safeAssistantMonth = assistantMonth ?? {};
-  const safeHours = monthlyHours ?? {};
-  const safeStudies = bibleStudies ?? {};
 
   const isFirstRender = useRef(true);
 
   useEffect(() => {
     try {
-      const peopleLS = localStorage.getItem("peopleList");
-      if (peopleLS) setPeopleList(JSON.parse(peopleLS));
+     
 
       const assistantLS = localStorage.getItem("assistantMonth");
       if (assistantLS) setAssistantMonth(JSON.parse(assistantLS));
@@ -529,7 +714,16 @@ const getMonthsForServiceYear = (
 
 
       if (data) {
-        setPeopleList(data as Person[]);
+        const formattedPeople = data.map((person) => ({
+          id: person.id,
+          name: person.name,
+          status: person.status,
+          hours: person.hours || 0,
+          participation: person.participation || "Да",
+          group: person.group_name,
+        }));
+
+        setPeopleList(formattedPeople);
       }
     };
 
@@ -551,6 +745,7 @@ const getMonthsForServiceYear = (
       if (data) {
         const archiveData = data.map((item) => ({
           id: item.id,
+
           serviceYear: item.service_year,
           month: item.month,
           group: item.group_name,
@@ -579,12 +774,95 @@ const getMonthsForServiceYear = (
 
           date: item.date,
         }));
-        console.log("ARCHIVE DATA", archiveData);
+      
         setArchive(archiveData as ArchiveItem[]);
       }
     };
 
     loadArchive();
+  }, []);
+
+  useEffect(() => {
+    const loadActivityLog = async () => {
+      const { data, error } = await supabase
+        .from("activity_log")
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setActivityLog(
+          data.map((item) => ({
+            user: item.user_name,
+            action: item.action,
+            date: item.date,
+          }))
+        );
+      }
+    };
+
+    loadActivityLog();
+  }, []);
+
+  useEffect(() => {
+    const loadGroups = async () => {
+      const { data, error } = await supabase
+        .from("groups")
+        .select("*")
+        .order("created_at");
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setGroups(data);
+      }
+    };
+
+    loadGroups();
+  }, []);
+
+  useEffect(() => {
+    const loadActivityLog = async () => {
+      const { data, error } = await supabase
+        .from("activity_log")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      if (data) {
+        setActivityLog(
+          data.map((item) => ({
+            user: item.user_name,
+            action: item.action,
+            date: item.date,
+          }))
+        );
+      }
+    };
+
+    loadActivityLog();
+  }, []);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem("currentUser");
+
+    if (!savedUser) return;
+
+    const user = JSON.parse(savedUser);
+
+    setCurrentUser(user);
+    setIsLoggedIn(true);
   }, []);
 
   const filteredGroupPeople = peopleList .filter(
@@ -603,6 +881,8 @@ const getMonthsForServiceYear = (
       );
     }
   ).length;
+
+  const [saveMessage, setSaveMessage] = useState("");
 
   const reportsSubmitted = filteredGroupPeople.filter(
     (person) => {
@@ -634,22 +914,24 @@ const getMonthsForServiceYear = (
     }
   ).length;
 
-  const notSubmitted = filteredGroupPeople.filter(
-    (person) => {
+  const notSubmitted =
+    filteredGroupPeople.filter((person) => {
       const key = monthKey(person.name);
       const hours = Number(monthlyHours[key] ?? 0);
 
+      // Общие пионеры обязаны сдать часы
       if (person.status === "regular_pioneer") {
         return hours <= 0;
       }
 
+      // Подсобные пионеры обязаны сдать часы
       if (assistantMonth[key]) {
         return hours <= 0;
       }
 
-      return safeParticipation[key] !== "Да";
-    }
-  ).length;
+      // Возвещатели и некрещёные должны отметить участие
+      return participation[key] !== "Да";
+    }).length;
 
   const groupMembersCount =
     peopleList.filter(
@@ -789,13 +1071,6 @@ const getMonthsForServiceYear = (
       );
     }).length;
 
-  const unbaptizedReports =
-    filteredGroupPeople.filter(
-      (person) =>
-        person.status === "unbaptized_publisher" &&
-        participation[monthKey(person.name)] === "Да"
-    ).length;
-
   const unbaptizedStudies =
     filteredGroupPeople.reduce(
       (sum, person) => {
@@ -816,82 +1091,6 @@ const getMonthsForServiceYear = (
       0
     );
 
-  const yearlyCongregationStats =
-    archive
-      .filter(
-        (item) =>
-          item.serviceYear === selectedYear
-      )
-      .reduce(
-        (acc, item) => ({
-          reports:
-            acc.reports + item.reports,
-          
-          publishers:
-            acc.publishers +
-            item.publishers,
-
-          inactive:
-             acc.inactive + (item.inactive ?? 0),
-
-          unbaptized:
-            acc.unbaptized +
-            item.unbaptized,
-
-          assistantHours:
-            acc.assistantHours +
-            item.assistantHours,
-
-          assistantStudies:
-            acc.assistantStudies +
-            item.assistantStudies,
-          
-          assistants:
-            acc.assistants +
-            item.assistants,
-
-          regulars:
-            acc.regulars +
-            item.regulars,
-
-          regularHours:
-            acc.regularHours +
-            item.regularHours,
-
-          regularStudies:
-            acc.regularStudies +
-            item.regularStudies,
-
-          totalHours:
-            acc.totalHours +
-            item.totalHours,
-
-          totalStudies:
-            acc.totalStudies +
-            item.totalStudies,
-        }),
-        {
-          reports: 0,
-
-          publishers: 0,
-          unbaptized: 0,
-
-          inactive: 0,
-
-          assistants: 0,
-          regulars: 0,
-
-          assistantHours: 0,
-          assistantStudies: 0,
-
-          regularHours: 0,
-          regularStudies: 0,
-
-          totalHours: 0,
-          totalStudies: 0,
-        }
-      );
-
   const getYearEndInactiveCount = (
     serviceYear: string
   ) => {
@@ -908,37 +1107,28 @@ const getMonthsForServiceYear = (
     return lastMonth.inactive ?? 0;
   };
 
-  const monthsInYear = Math.max(
-    archive.filter(
-      (item) => item.serviceYear === selectedYear
-    ).length,
-    1
-  );
-
-  const yearEndInactive =
-    getYearEndInactiveCount(selectedYear);
-
   const totalStudies =
     publisherStudies +
     assistantStudies +
     regularStudies+
     unbaptizedStudies;
 
-  
-  const saveMonthToArchive = async () => {
-    const alreadyExists = archive.some(
-      (item) =>
-        item.serviceYear === selectedYear &&
-        item.month === selectedMonth &&
-        item.group === selectedGroup
+  const saveMonthToArchive = async () => {  
+    const existingRecord = archive.find(
+    (item) =>
+    item.serviceYear === selectedYear &&
+    item.month === selectedMonth &&
+    item.group === selectedGroup
     );
 
-    if (alreadyExists) {
-      alert(
-        "Этот месяц уже сохранён в архиве для выбранной группы."
-      );
-      return;
-    }
+    const { data: existingDbRecord } = await supabase
+      .from("archive")
+      .select("id")
+      .eq("service_year", selectedYear)
+      .eq("month", selectedMonth)
+      .eq("group_name", selectedGroup)
+      .maybeSingle();
+
     const inactiveCount = filteredGroupPeople.filter((person) =>
       isInactive(person)
     ).length;
@@ -985,111 +1175,804 @@ const getMonthsForServiceYear = (
 
       date: new Date().toISOString(),
     };
-    const { error } = await supabase
-      .from("archive")
-      .insert([
-        {
-          service_year: selectedYear,
-          month: selectedMonth,
-          group_name: selectedGroup,
+    if (existingRecord) {
 
-          reports: reportsSubmitted,
+      if (isArchiveMonth(selectedMonth)) {
 
-          publishers: publishersCount,
-          publisher_studies: publisherStudies,
-          inactive: inactiveCount,
+        const shouldUpdate = window.confirm(
+          `Вы изменяете архивный отчёт.
 
-          unbaptized: unbaptizedCount,
-          unbaptized_studies: unbaptizedStudies,
+        Это может повлиять на историю возвещателей, статистику и экспорт.
 
-          assistants: assistantPioneersCount,
-          assistant_hours: assistantHours,
-          assistant_studies: assistantStudies,
+        Продолжить?`
+        );
 
-          regulars: regularPioneersCount,
-          regular_hours: regularPioneerHours,
-          regular_studies: regularStudies,
-          regular_pioneer_details: regularPioneerDetails,
+        if (!shouldUpdate) {
+          return;
+        }
 
-          total_hours: totalGroupHours,
-          total_studies: totalStudies,
+      } else {
 
-          date: new Date().toISOString(),
-        },
-      ]);
+        const shouldUpdate = window.confirm(
+          `Отчёт за ${selectedMonth} уже существует.
 
-    if (error) {
-      console.error(error);
-      return;
+        Хотите заменить его новыми данными?`
+        );
+
+        if (!shouldUpdate) {
+          return;
+        }
+
+      }
+
     }
 
-    setArchive((prev) => [...prev, archiveItem]);
-  };
-  const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(
-      archive
-        .filter(
-          (item) =>
-            item.serviceYear === selectedYear
-        )
-        .map((item) => ({
-        "Служебный год":
-          item.serviceYear,
+    const continueSave = async () => {
 
-        "Месяц":
-          item.month,
+      let error = null;
 
-        "Группа":
-          item.group,
+      if (existingDbRecord) {
+        const { error: updateError } = await supabase
+          .from("archive")
+          .update({
+            reports: reportsSubmitted,
 
-        "Сдали отчёт":
-          item.reports,
+            publishers: publishersCount,
+            publisher_studies: publisherStudies,
+            inactive: inactiveCount,
 
-        "Некрещёные возвещатели":
-          item.unbaptized,
+            unbaptized: unbaptizedCount,
+            unbaptized_studies: unbaptizedStudies,
 
-        "Изучения некрещёных":
-          item.unbaptizedStudies,
+            assistants: assistantPioneersCount,
+            assistant_hours: assistantHours,
+            assistant_studies: assistantStudies,
 
-        "Подсобные пионеры":
-          item.assistants,
+            regulars: regularPioneersCount,
+            regular_hours: regularPioneerHours,
+            regular_studies: regularStudies,
+            regular_pioneer_details: regularPioneerDetails,
 
-        "Часы подсобных":
-          item.assistantHours,
+            total_hours: totalGroupHours,
+            total_studies: totalStudies,
 
-        "Изучения подсобных":
-          item.assistantStudies,
+            date: new Date().toISOString(),
+          })
+          .eq("id", existingDbRecord.id);
 
-        "Общие пионеры":
-          item.regulars,
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("archive")
+          .insert([
+            {
+              service_year: selectedYear,
+              month: selectedMonth,
+              group_name: selectedGroup,
 
-        "Часы общих":
-          item.regularHours,
+              reports: reportsSubmitted,
 
-        "Изучения общих":
-          item.regularStudies,
+              publishers: publishersCount,
+              publisher_studies: publisherStudies,
+              inactive: inactiveCount,
 
-        "Всего часов":
-          item.totalHours,
+              unbaptized: unbaptizedCount,
+              unbaptized_studies: unbaptizedStudies,
 
-        "Всего изучений":
-          item.totalStudies,
-        }))
+              assistants: assistantPioneersCount,
+              assistant_hours: assistantHours,
+              assistant_studies: assistantStudies,
+
+              regulars: regularPioneersCount,
+              regular_hours: regularPioneerHours,
+              regular_studies: regularStudies,
+              regular_pioneer_details: regularPioneerDetails,
+
+              total_hours: totalGroupHours,
+              total_studies: totalStudies,
+
+              date: new Date().toISOString(),
+            },
+          ]);
+
+        error = insertError;
+      }
+
+      if (error) {
+        console.error(
+          "Ошибка архива:",
+          JSON.stringify(error, null, 2)
+        );
+        return;
+      }
+
+      for (const person of filteredGroupPeople) {
+        await savePersonHistory(
+          person,
+          selectedMonth,
+          selectedYear
+        );
+      }
+
+      const clearedPeople = peopleList.map((p) => ({
+        ...p,
+        event: undefined,
+      }));
+
+      setPeopleList(clearedPeople);
+
+      if (existingDbRecord) {
+        await logAction(
+          `Изменил отчёт: ${selectedMonth} (${selectedGroup})`
+        );
+      } else {
+        await logAction(
+          `Сохранил отчёт: ${selectedMonth} (${selectedGroup})`
+        );
+      }
+
+      setArchive((prev) => [...prev, archiveItem]);
+
+      setSaveMessage("Сохранено");
+
+      setTimeout(() => {
+        setSaveMessage("");
+      }, 2000);
+    };
+
+    await continueSave();
+
+  }
+
+  const createWorkbook = async (
+    history: any[],
+    exportType: "serviceYear" | "lastSixMonths",
+    peopleList: Person[]
+  ) => {
+
+    const workbook = XLSX.utils.book_new();
+
+    const rows: any[][] = [];
+
+    rows.push([
+      exportType === "serviceYear"
+        ? "ОТЧЁТ ЗА СЛУЖЕБНЫЙ ГОД"
+        : "ОТЧЁТ ЗА ПОСЛЕДНИЕ 6 МЕСЯЦЕВ"
+    ]);
+
+    rows.push([
+      exportType === "serviceYear"
+        ? selectedYear
+        : ""
+    ]);
+
+    rows.push([
+      "Собрание:",
+      ""
+    ]);
+
+    rows.push([
+      "Дата создания:",
+      new Date().toLocaleDateString("ru-RU")
+    ]);
+
+    rows.push([]);
+
+    const groupedByGroup = history.reduce(
+      (acc: Record<string, any[]>, item: any) => {
+
+        if (!acc[item.group_name]) {
+          acc[item.group_name] = [];
+        }
+
+        acc[item.group_name].push(item);
+
+        return acc;
+
+      },
+      {}
     );
 
-    const workbook =
-      XLSX.utils.book_new();
+    const monthOrder = getMonthsForServiceYear(selectedYear);
+
+    rows.push([
+      "ФИО",
+      ...monthOrder.map(m => m.split(" ")[0]),
+    ]);
+
+    const rowColors = new Map<number, "op" | "nv">();
+
+    for (const groupName of Object.keys(groupedByGroup).sort()) {
+
+      rows.push([]);
+
+      const people = new Map<string, any>();
+
+      groupedByGroup[groupName].forEach((item: any) => {
+
+        if (!people.has(item.person_id)) {
+          people.set(item.person_id, {
+            id: item.person_id,
+            name: item.person_name,
+            status: item.status,
+            inactive: item.inactive,
+            months: {},
+          });
+        }
+
+        people.get(item.person_id).months[item.month] = item;
+
+        if (item.inactive) {
+          people.get(item.person_id).inactive = true;
+        }
+
+      });
+
+      rows.push([
+        `${groupName.toUpperCase()} (${people.size})`
+      ]);
+
+      for (const person of people.values()) {
+
+        const badges: string[] = [];
+
+      if (person.status === "regular_pioneer") {
+        badges.push("ОП");
+      }
+
+      if (person.status === "unbaptized_publisher") {
+        badges.push("НВ");
+      }
+
+      if (person.inactive) {
+        badges.push("НЕАКТ.");
+      }
+
+      const status = badges.join(" • ");
+
+        const row = [
+          status
+            ? `${person.name}\n${status}`
+            : person.name,
+        ];
+
+        const rowIndex = rows.length;
+
+        if (person.status === "regular_pioneer") {
+          rowColors.set(rowIndex, "op");
+        }
+
+        if (person.status === "unbaptized_publisher") {
+          rowColors.set(rowIndex, "nv");
+        }
+
+        monthOrder.forEach((month) => {
+
+          const report = person.months[month];
+
+          if (!report) {
+            row.push("");
+            return;
+          }
+
+          if (
+            report.status === "regular_pioneer" ||
+            report.assistant_pioneer
+          ) {
+
+            const studies =
+              report.studies && report.studies > 0
+                ? ` (${report.studies})`
+                : "";
+
+            row.push(
+              `${report.hours || 0}ч${studies}`
+            );
+
+          } else {
+
+            if (report.participation === "Да") {
+
+              const studies =
+                report.studies && report.studies > 0
+                  ? ` (${report.studies})`
+                  : "";
+
+              row.push(`Да${studies}`);
+
+            } else {
+
+              row.push("Нет");
+
+            }
+
+          }
+
+        });
+
+        rows.push(row);
+
+      }
+
+    }
+
+    const uniquePeople = new Map<string, any>();
+
+    history.forEach((item: any) => {
+
+      if (!uniquePeople.has(item.person_id)) {
+        uniquePeople.set(item.person_id, {
+          status: item.status,
+        });
+      }
+
+    });
+
+    const totalPeople = uniquePeople.size;
+
+    const unbaptizedCount = [...uniquePeople.values()].filter(
+      (p) => p.status === "unbaptized_publisher"
+    ).length;
+
+    const inactiveCount = [...uniquePeople.values()].filter(
+      (p) => p.status === "inactive"
+    ).length;
+
+    const regularPioneers = [...uniquePeople.values()].filter(
+      (p) => p.status === "regular_pioneer"
+    ).length;
+
+    const regularHours = history
+      .filter((r: any) => r.status === "regular_pioneer")
+      .reduce(
+        (sum: number, r: any) => sum + (Number(r.hours) || 0),
+        0
+      );
+
+    const assistantHours = history
+      .filter((r: any) => r.assistant_pioneer)
+      .reduce(
+        (sum: number, r: any) => sum + (Number(r.hours) || 0),
+        0
+      );
+
+      rows.push([]);
+
+      rows.push(["ИТОГИ"]);
+
+      rows.push([]);
+
+      rows.push([
+        "Всего человек",
+        totalPeople,
+      ]);
+
+      rows.push([
+        "Некрещёных",
+        unbaptizedCount,
+      ]);
+
+      rows.push([
+        "Неактивных",
+        inactiveCount,
+      ]);
+
+      rows.push([
+        "Общих пионеров",
+        regularPioneers,
+      ]);
+
+      rows.push([
+        "Часы общих пионеров",
+        regularHours,
+      ]);
+
+      rows.push([
+        "Часы подсобных",
+        assistantHours,
+      ]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    worksheet["!cols"] = [
+      { wch: 30 }, 
+      ...monthOrder.map(() => ({ wch: 12 })),
+      { wch: 14 },
+    ];
+
+    worksheet["!rows"] = rows.map((_, index) => {
+
+      if (index === 0) return { hpt: 26 }; 
+      if (index === 1) return { hpt: 22 }; 
+      if (index === 2) return { hpt: 22 }; 
+      if (index === 3) return { hpt: 22 }; 
+      if (index === 4) return { hpt: 10 }; 
+
+      return { hpt: 32 };
+
+    });
+
+    for (const [rowIndex, colorType] of rowColors.entries()) {
+
+      for (let C = 0; C <= monthOrder.length; C++) {
+
+        const address = XLSX.utils.encode_cell({
+          r: rowIndex,
+          c: C,
+        });
+
+        if (!worksheet[address]) continue;
+
+        worksheet[address].s = {
+          ...(worksheet[address].s || {}),
+
+          fill: {
+            fgColor: {
+              rgb:
+                colorType === "op"
+                  ? "EAF5FF"
+                  : "FFF8E8",
+            },
+          },
+        };
+
+      }
+
+    }
+
+    worksheet["!merges"] = [
+      {
+        s: { r: 0, c: 0 },
+        e: { r: 0, c: 8 },
+      },
+
+      {
+        s: { r: 1, c: 0 },
+        e: { r: 1, c: 8 },
+      },
+
+      {
+        s: { r: 0, c: 9 },
+        e: { r: 1, c: 12 },
+      },
+    ];
+
+    
+
+    const titleStyle = {
+      font: {
+        bold: true,
+        sz: 18,
+        color: { rgb: "426B8E" },
+        name: "Calibri",
+      },
+
+      alignment: {
+        horizontal: "center",
+        vertical: "center",
+      },
+    };
+
+    const subTitleStyle = {
+      font: {
+        bold: true,
+        sz: 13,
+        color: { rgb: "426B8E" },
+        name: "Calibri",
+      },
+
+      alignment: {
+        horizontal: "center",
+        vertical: "center",
+      },
+    };
+
+    const infoStyle = {
+      font: {
+        bold: true,
+        color: { rgb: "426B8E" },
+      },
+    };
+
+    worksheet["A1"].s = titleStyle;
+    worksheet["A2"].s = subTitleStyle;
+    worksheet["A3"].s = infoStyle; 
+    worksheet["A4"].s = infoStyle;
+
+    worksheet["J1"] = {
+      t: "s",
+      v: "JW\nPublisher Reports",
+    };
+
+    worksheet["J1"].s = {
+      font: {
+        bold: true,
+        sz: 26,
+        color: {
+          rgb: "4B84B6",
+        },
+        name: "Calibri",
+      },
+
+      alignment: {
+        horizontal: "center",
+        vertical: "center",
+        wrapText: true,
+      },
+    };
+
+    const range = XLSX.utils.decode_range(
+      worksheet["!ref"] || "A1"
+    );
+
+    worksheet["!freeze"] = {
+      xSplit: 0,
+      ySplit: 5,
+    };
+
+    worksheet["!autofilter"] = {
+      ref: XLSX.utils.encode_range({
+        s: { r: 4, c: 0 },
+        e: {
+          r: range.e.r,
+          c: range.e.c,
+        },
+      }),
+    };
+
+
+
+    worksheet["!pageSetup"] = {
+      orientation: "landscape", 
+      fitToWidth: 1,
+      fitToHeight: 0,
+    };
+
+    worksheet["!margins"] = {
+      left: 0.3,
+      right: 0.3,
+      top: 0.5,
+      bottom: 0.5,
+      header: 0.2,
+      footer: 0.2,
+    };
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+
+      const firstAddress = XLSX.utils.encode_cell({
+        r: R,
+        c: 0,
+      });
+
+      const firstCell = worksheet[firstAddress];
+
+      if (!firstCell) continue;
+
+      const isHeader = R === 5;
+
+      const isGroup =
+        typeof firstCell.v === "string" &&
+        String(firstCell.v).startsWith("ГРУППА");
+
+      const isSummary =
+        typeof firstCell.v === "string" &&
+        String(firstCell.v) === "ИТОГИ";
+
+      for (let C = range.s.c; C <= range.e.c; C++) {
+
+        const address = XLSX.utils.encode_cell({
+          r: R,
+          c: C,
+        });
+
+        if (!worksheet[address]) {
+          worksheet[address] = {
+            t: "s",
+            v: "",
+          };
+        }
+
+        const cell = worksheet[address];
+
+        cell.s = {
+          font: {
+            name: "Calibri",
+            sz: 11,
+            color: { rgb: "000000" },
+          },
+
+          alignment: {
+            horizontal: C === 0 ? "left" : "center",
+            vertical: "center",
+            wrapText: true,
+          },
+
+          border: {
+            top: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            bottom: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            left: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            right: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+          },
+        };
+
+        if (isHeader) {
+
+          cell.s.fill = {
+            fgColor: {
+              rgb: "FFFFFF",
+            },
+          };
+
+          cell.s.font = {
+            bold: true,
+            color: {
+              rgb: "426B8E",
+            },
+            sz: 11,
+          };
+
+        }
+
+        if (isGroup) {
+
+          cell.s.fill = {
+            fgColor: {
+              rgb: "4B84B6",
+            },
+          };
+
+          cell.s.font = {
+            bold: true,
+            color: {
+              rgb: "FFFFFF",
+            },
+            sz: 11,
+          };
+
+          cell.s.alignment = {
+            horizontal: "center",
+            vertical: "center",
+          };
+
+        }
+
+        if (isSummary) {
+
+          cell.s.fill = {
+            fgColor: {
+              rgb: "4B84B6",
+            },
+          };
+
+          cell.s.font = {
+            bold: true,
+            color: {
+              rgb: "FFFFFF",
+            },
+            sz: 12,
+          };
+
+          cell.s.alignment = {
+            horizontal: "center",
+            vertical: "center",
+          };
+
+        }
+
+      }
+
+    }
+
+    for (const [rowIndex, colorType] of rowColors.entries()) {
+
+      for (let C = range.s.c; C <= range.e.c; C++) {
+
+        const address = XLSX.utils.encode_cell({
+          r: rowIndex,
+          c: C,
+        });
+
+        if (!worksheet[address]) continue;
+
+        worksheet[address].s = {
+          ...worksheet[address].s,
+
+          fill: {
+            fgColor: {
+              rgb:
+                colorType === "op"
+                  ? "EAF5FF"
+                  : "FFF8E8",
+            },
+          },
+        };
+
+      }
+
+    }
 
     XLSX.utils.book_append_sheet(
       workbook,
       worksheet,
-      "Отчёты"
+      exportType === "serviceYear"
+        ? "Служебный год"
+        : "Последние 6 месяцев"
     );
+
+    return {
+      workbook,
+      worksheet,
+    };
+
+  };
+
+  const exportReport = async () => {
+
+    const history = await loadAllHistory();
+
+    const {
+      workbook,
+    } = await createWorkbook(
+      history,
+      exportType,
+      peopleList
+    );
+
+    const groupedByGroup = history.reduce(
+      (acc: any, item: any) => {
+
+        if (!acc[item.group_name]) {
+          acc[item.group_name] = [];
+        }
+
+        acc[item.group_name].push(item);
+
+        return acc;
+
+      },
+      {}
+    );
+
+    let reportData: typeof archive = [];
+
+    if (exportType === "serviceYear") {
+
+      reportData = archive.filter(
+        (item) => item.serviceYear === selectedYear
+      );
+
+    }
+
+    if (exportType === "lastSixMonths") {
+
+      reportData = archive.slice(-6);
+
+    }
+
+    setShowExportModal(false);
+
+    const fileName =
+      exportType === "serviceYear"
+        ? `Отчёт_${selectedYear}.xlsx`
+        : "Отчёт_последние_6_месяцев.xlsx";
 
     XLSX.writeFile(
       workbook,
-      `Отчёт_${selectedYear}.xlsx`
+      fileName
     );
+
   };
 
   if (!mounted) return null;
@@ -1110,34 +1993,319 @@ const getMonthsForServiceYear = (
             className="mb-2 w-full max-w-xl object-contain"
           />
 
-          <div className="bg-white/95 p-5 rounded-[28px] shadow-sm max-w-md">
-
-          <input
-            className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
-            placeholder="Логин"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-          />
-
-          <input
-            className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
-            placeholder="Пароль"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-
-        <button
-            onClick={handleLogin}
-            className="mt-6 w-full max-w-md bg-[#4B84B6] text-white py-3 rounded-full shadow-sm"
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            className="bg-white/95 p-5 rounded-[28px] shadow-sm max-w-md"
           >
-            Войти
-          </button>
+            <input
+              className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
+              placeholder="Логин"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+            />
+
+            <input
+              className="w-full mb-3 px-7 py-4 rounded-full text-[#426B8E] bg-[#F3FAFF]"
+              placeholder="Пароль"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+
+            <button
+              type="submit"
+              className="mt-6 w-full bg-[#4B84B6] text-white py-3 rounded-full shadow-sm"
+            >
+              Войти
+            </button>
+          </form>
       </div>
       </div>
     );
   }
+
+  const getStatusBadge = (
+    item: any
+  ) => {
+    if (item.assistant_pioneer) {
+      return "bg-[#EEE6FF] text-[#7A58B5]";
+    }
+
+    switch (item.status) {
+      case "regular_pioneer":
+        return "bg-[#D8ECFA] text-[#3F78A8]";
+
+      case "unbaptized_publisher":
+        return "bg-[#ECEAE6] text-[#6B7280]";
+
+      default:
+        return "";
+    }
+  };
+
+  const getEventBadge = (
+    event: string
+  ) => {
+    switch (event) {
+      case "Крестился":
+        return "bg-[#ECEAE6] text-[#6B7280]";
+
+      case "Стал О П":
+        return "bg-[#D8ECFA] text-[#3F78A8]";
+
+      case "Перестал быть О П":
+        return "bg-slate-100 text-slate-600";
+
+      default:
+        return "bg-slate-100 text-slate-600";
+    }
+  };
+
+  if (selectedPerson) {
+    const getStatusLabel = (
+      item: any
+    ) => {
+      if (item.assistant_pioneer) {
+        return "П П";
+      }
+
+      switch (item.status) {
+        case "unbaptized_publisher":
+          return "Н В";
+
+        case "regular_pioneer":
+          return "О П";
+
+        default:
+          return "";
+      }
+    };
+
+    const monthOrder = [
+      "Сентябрь",
+      "Октябрь",
+      "Ноябрь",
+      "Декабрь",
+      "Январь",
+      "Февраль",
+      "Март",
+      "Апрель",
+      "Май",
+      "Июнь",
+      "Июль",
+      "Август",
+    ];
+
+    const groupedHistory = personHistory.reduce(
+      (acc: any, item) => {
+        if (!acc[item.service_year]) {
+          acc[item.service_year] = [];
+        }
+
+        acc[item.service_year].push(item);
+
+        return acc;
+      },
+      {}
+    );
+
+    Object.values(groupedHistory).forEach((items: any) => {
+      items.sort((a: any, b: any) => {
+        const monthA = a.month.split(" ")[0];
+        const monthB = b.month.split(" ")[0];
+
+        return (
+          monthOrder.indexOf(monthA) -
+          monthOrder.indexOf(monthB)
+        );
+      });
+    });
+
+    const yearlyHours = Object.fromEntries(
+      Object.entries(groupedHistory).map(
+        ([serviceYear, items]) => [
+          serviceYear,
+          (items as any[]).reduce(
+            (sum, item) => sum + (item.hours || 0),
+            0
+          ),
+        ]
+      )
+    );
+    
+    return (
+      <div className="min-h-screen bg-[#EEF5FA] p-6">
+
+        <div className="mb-4 flex items-start justify-between">
+          <button
+            onClick={() => setSelectedPerson(null)}
+            className="rounded-full bg-white px-4 py-2 text-sm text-[#426B8E] shadow-sm hover:bg-slate-50 transition"
+          >
+            ← Назад
+          </button>
+
+          {(
+            selectedPerson.status === "regular_pioneer" ||
+            personHistory.some((item) => item.assistant_pioneer)
+          ) && (
+
+          <div className="min-w-[170px] rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
+            <div className="text-xs uppercase tracking-wide text-slate-400">
+              Годовой отчёт
+            </div>
+
+            <div className="mt-2 text-sm font-medium text-[#426B8E]">
+              {selectedYear}
+            </div>
+
+            <div className="mt-3 text-3xl font-bold text-[#426B8E]">
+              {yearlyHours[selectedYear] || 0}
+            </div>
+
+            <div className="text-xs text-slate-400">
+              часов
+            </div>
+          </div>
+          )}
+        </div>
+
+        <div
+          className={`mb-6 ${
+            selectedPerson.status === "regular_pioneer" ||
+            personHistory.some((item) => item.assistant_pioneer)
+              ? "-mt-20"
+              : "-mt-2"
+          }`}
+        >
+          <h1 className="text-2xl font-bold text-[#426B8E]">
+            {selectedPerson.name}
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500">
+            История служения
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {Object.entries(groupedHistory).map(
+            ([serviceYear, items]) => (
+              <div key={serviceYear} className="space-y-3">
+
+                <div className="my-6 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-slate-300" />
+
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    {serviceYear}
+                  </div>
+
+                  <div className="h-px flex-1 bg-slate-300" />
+                </div>
+
+                
+                {(items as any[]).map((item) => {
+                  const yearHours = yearlyHours[item.service_year];
+
+                  return (
+                  <div key={item.id}>
+                    <div className="rounded-2xl bg-white px-5 py-4 shadow-sm border border-slate-100">
+
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="text-sm font-semibold tracking-wide text-[#426B8E]">
+                          {item.month}
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1">
+
+                          {(item.assistant_pioneer ||
+                            item.status === "regular_pioneer" ||
+                            item.status === "unbaptized_publisher") && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getStatusBadge(item)}`}
+                            >
+                              {getStatusLabel(item)}
+                            </span>
+                          )}
+
+                          {item.inactive && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                              Неактивный
+                            </span>
+                          )}
+
+                        </div>
+                      </div>
+
+                      {item.status === "regular_pioneer" ||
+                      item.assistant_pioneer ? (
+                        <>
+                          <div className="text-sm text-slate-600">
+                            Часы:{" "}
+                            <span className="font-medium">
+                              {item.hours}
+                            </span>
+                          </div>
+
+                          {item.month.includes("Август") && (
+                            <div className="mt-1 text-sm font-semibold text-[#426B8E]">
+                              Итого за служебный год: {yearHours} ч
+                            </div>
+                          )}
+
+                          <div className="text-sm text-slate-600">
+                            Изучения:{" "}
+                            <span className="font-medium">
+                              {item.studies}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm text-slate-600">
+                            <span className="font-medium">
+                              {item.participation}
+                            </span>
+                          </div>
+
+                          <div className="text-sm text-slate-600">
+                            Изучения:{" "}
+                            <span className="font-medium">
+                              {item.studies}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {item.event &&
+                        item.event !== "Стал П П" && (
+                          <div className="mt-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getEventBadge(item.event)}`}
+                            >
+                              {item.event}
+                            </span>
+                          </div>
+                        )}
+
+                      {item.note && (
+                        <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                          {item.note}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  );
+               })}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
 
   if (currentPage === "groups") {
     return (
@@ -1156,102 +2324,288 @@ const getMonthsForServiceYear = (
           </p>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              "Группа 1",
-              "Группа 2",
-              "Группа 3",
-              "Группа 4",
-              "Группа 5",
-              "Группа 6",
-            ].map((group) => (
-              <button
-                key={group}
-                onClick={() => {
-                  setSelectedGroup(group);
-                  setCurrentPage("people");
-                }}
+            {groups.map((group) => (
+              <div
+                key={group.id}
                 className="
-                w-full
-                rounded-[32px]
-                bg-white
-                p-6
-                shadow-sm
-                text-center
-                font-semibold
-                text-[#426B8E]
-                transition-all
-                hover:shadow-md"
+                  relative
+                  w-full
+                  rounded-[32px]
+                  bg-white
+                  p-6
+                  shadow-sm
+                  transition-all
+                  hover:shadow-md
+                "
               >
-                <div className="text-xl font-semibold text-[#426B8E]">
-                  {group}
-                </div>
-              </button>
+                <button
+                  onClick={() => {
+                    setSelectedGroup(group.name);
+                    setCurrentPage("people");
+                  }}
+                  className="w-full text-center"
+                >
+                  <div className="text-xl font-semibold text-[#426B8E]">
+                    {group.name}
+                  </div>
+                </button>
+
+                {isSecretary && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+
+                      setOpenGroupMenu(
+                        openGroupMenu === group.id
+                          ? null
+                          : group.id
+                      );
+                    }}
+                    className="
+                      absolute
+                      right-3
+                      top-3
+                      flex
+                      h-8
+                      w-8
+                      items-center
+                      justify-center
+                      rounded-xl
+                      bg-[#F3FAFF]
+                      text-[#426B8E]
+                      transition
+                      hover:bg-[#D8ECFA]
+                    "
+                      
+
+                  >
+                    ⋮
+                  </button>
+                )}
+                {isSecretary &&
+                  openGroupMenu === group.id && (
+                    <div
+                      className="
+                        absolute
+                        right-3
+                        top-12
+                        z-50
+                        w-36
+                        rounded-2xl
+                        bg-white
+                        shadow-lg
+                        border
+                        border-slate-100
+                        overflow-hidden
+                      "
+                    >
+                      <button
+                        onClick={async () => {
+                          const newName = prompt(
+                            "Новое название группы",
+                            group.name
+                          );
+
+                          if (!newName || newName === group.name) {
+                            return;
+                          }
+
+                          const { error } = await supabase
+                            .from("groups")
+                            .update({
+                              name: newName,
+                            })
+                            .eq("id", group.id);
+
+                          if (error) {
+                            console.error(error);
+                            alert("Ошибка редактирования");
+                            return;
+                          }
+
+                          const { data } = await supabase
+                            .from("groups")
+                            .select("*")
+                            .order("created_at");
+
+                          if (data) {
+                            setGroups(data);
+                          }
+
+                          setOpenGroupMenu(null);
+                        }}
+                        className="
+                          w-full
+                          px-3
+                          py-2
+                          text-left
+                          text-xs
+                          text-[#426B8E]
+                          hover:bg-[#F3FAFF]
+                        "
+                      >
+                        Редактировать
+                      </button>
+
+                      <div className="h-px bg-slate-100" />
+
+                      <button
+                        onClick={async () => {
+                          const peopleInGroup = peopleList.filter(
+                            (person) =>
+                              (person.group || "Группа 1") === group.name
+                          );
+
+                          if (peopleInGroup.length > 0) {
+                            alert(
+                              `В группе "${group.name}" есть люди (${peopleInGroup.length} чел.). Сначала перенесите или удалите их.`
+                            );
+
+                            return;
+                          }
+
+                          const confirmed = window.confirm(
+                            `Удалить группу "${group.name}"?`
+                          );
+
+                          if (!confirmed) {
+                            return;
+                          }
+
+                          const { error } = await supabase
+                            .from("groups")
+                            .delete()
+                            .eq("id", group.id);
+
+                          if (error) {
+                            console.error(error);
+                            alert("Ошибка удаления");
+                            return;
+                          }
+
+                          setGroups(
+                            groups.filter((g) => g.id !== group.id)
+                          );
+
+                          setOpenGroupMenu(null);
+                        }}
+                        className="
+                          w-full
+                          px-3
+                          py-2
+                          text-left
+                          text-xs
+                          text-red-600
+                          hover:bg-red-50
+                        "
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                )}
+              </div>
             ))}
+            
           </div>
+          {isSecretary && (
+            <button
+              onClick={async () => {
+                const name = prompt("Название новой группы");
+
+                if (!name) return;
+
+                const { error } = await supabase
+                  .from("groups")
+                  .insert([{ name }]);
+
+                if (error) {
+                  console.error(error);
+                  alert("Ошибка создания группы");
+                  return;
+                }
+
+                const { data } = await supabase
+                  .from("groups")
+                  .select("*")
+                  .order("created_at");
+
+                if (data) {
+                  setGroups(data);
+                }
+              }}
+              className="
+                fixed
+                bottom-6
+                right-6
+                h-14
+                w-14
+                rounded-2xl
+                bg-[#D8ECFA]
+                text-[#426B8E]
+                text-3xl
+                shadow-lg
+                transition-all
+                hover:bg-[#4B84B6]
+                hover:text-white
+                hover:scale-105
+                z-50
+              "
+            >
+              +
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
-  const yearlyPioneerReport = peopleList
-    .filter(
-      (person) =>
-        person.status === "regular_pioneer"
-    )
-    .map((person) => ({
-      name: person.name,
-
-      hours: archive
-        .filter(
-          (item) =>
-            item.serviceYear === selectedYear
-        )
-        .reduce((sum, item) => {
-          const pioneer =
-            item.regularPioneerDetails?.find(
-              (p) => p.name === person.name
-            );
-
-          return sum + (pioneer?.hours || 0);
-        }, 0),
-    }));
-  
-  if (showPioneerReport) {
+  if (currentPage === "journal") {
     return (
       <main className="min-h-screen bg-[#EEF5FA] p-6">
-
-        <button
-          onClick={() =>
-            setShowPioneerReport(false)
-          }
-          className="mb-4 rounded-2xl bg-white px-4 py-2 text-[#426B8E] shadow-sm"
-        >
-          ← Назад
-        </button>
-
-        <h1 className="mb-6 text-3xl font-semibold text-[#426B8E]">
-          Годовой отчёт общих пионеров
-        </h1>
-
-        <div className="space-y-3">
-
-          {yearlyPioneerReport.map((pioneer) => (
-            <div
-              key={pioneer.name}
-              className="rounded-3xl bg-white p-5 shadow-sm"
-            >
-              <div className="font-semibold text-[#426B8E]">
-                {pioneer.name}
-              </div>
-
-              <div className="mt-2 text-slate-500">
-                Часы за год: {pioneer.hours}
-              </div>
-            </div>
-          ))}
-
+        <div className="mb-4">
+          <button
+            onClick={() => setCurrentPage("people")}
+            className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]"
+          >
+            ← Назад
+          </button>
         </div>
 
+        <div className="mx-auto max-w-4xl">
+          <div className="rounded-[32px] bg-white p-6 shadow-sm">
+            <h2 className="mb-6 text-2xl font-semibold text-[#426B8E]">
+              Журнал действий
+            </h2>
+
+            <div className="space-y-3">
+              {activityLog.length === 0 ? (
+                <div className="rounded-2xl bg-[#FAFCFE] p-6 text-center text-slate-400">
+                  Журнал действий пока пуст
+                </div>
+              ) : (
+                activityLog.map((item, index) => (
+               <div
+                  key={index}
+                  className="rounded-2xl bg-[#FAFCFE] p-4 border border-slate-100"
+                >
+                  <div className="text-xs text-slate-400">
+                    {new Date(item.date).toLocaleString("ru-RU")}
+                  </div>
+
+                  <div className="mt-2 font-semibold text-[#426B8E]">
+                    👤 {item.user}
+                  </div>
+
+                  <div className="mt-2 text-sm text-slate-600">
+                    {item.action}
+                  </div>
+                </div>
+              ))
+             )
+            }
+            </div>
+          </div>
+        </div>
       </main>
     );
   }
@@ -1259,12 +2613,34 @@ const getMonthsForServiceYear = (
   return (
     <main className="min-h-screen bg-[#EEF5FA] p-6">
       <div className="mb-4">
+       <div className="mb-4 flex items-center justify-between">
         <button
           onClick={() => setCurrentPage("groups")}
           className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]"
         >
           ← К группам
         </button>
+
+       <div className="flex items-center gap-2">
+          <div className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]">
+            👤 {currentUser?.name}
+          </div>
+
+          <button
+            onClick={() => {
+              localStorage.removeItem("currentUser");
+
+              setCurrentUser(null);
+              setIsLoggedIn(false);
+
+              setCurrentPage("groups");
+            }}
+            className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E] hover:bg-[#F3FAFF]"
+          >
+            ↩ Выход
+          </button>
+        </div>
+      </div>
       </div>
       <div className="mx-auto max-w-6xl">
         
@@ -1336,16 +2712,40 @@ const getMonthsForServiceYear = (
                       return;
                     }
 
-                    setPeopleList([
-                       ...peopleList,
-                       {
-                        name: newName,
-                        status: newStatus,
-                        hours: 0,
-                        participation: "Да",
-                        group: selectedGroup,
-                      },
-                    ]);
+                    const { data: refreshedPeople } = await supabase
+                      .from("people")
+                      .select("*");
+
+                    if (refreshedPeople) {
+                      const formattedPeople = refreshedPeople.map((person) => ({
+                        id: person.id,
+                        name: person.name,
+                        status: person.status,
+                        hours: person.hours || 0,
+                        participation: person.participation || "Да",
+                        group: person.group_name,
+                      }));
+
+                      setPeopleList(formattedPeople);
+                    }
+
+                    let statusText = "";
+
+                    if (newStatus === "publisher") {
+                      statusText = "возвещатель";
+                    }
+
+                    if (newStatus === "unbaptized_publisher") {
+                      statusText = "некрещёный возвещатель";
+                    }
+
+                    if (newStatus === "regular_pioneer") {
+                      statusText = "общий пионер";
+                    }
+
+                    await logAction(
+                      `Добавлен: ${statusText} ${newName} в ${selectedGroup}`
+                    );
 
                     setNewName("");
                     setNewStatus("publisher");
@@ -1414,10 +2814,13 @@ const getMonthsForServiceYear = (
                 )
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((person, index) => (
-
+                  
+                  
                 <div
                   key={index}
-                  className={`rounded-3xl backdrop-blur-sm p-3 ${
+                  className={`relative ${
+                    openMenu === index ? "z-[999]" : "z-0"
+                  } rounded-3xl backdrop-blur-sm p-3 ${
                     person.status === "regular_pioneer"
                       ? "bg-[#DDECF7]/55"
                       : "bg-white/70"
@@ -1447,9 +2850,20 @@ const getMonthsForServiceYear = (
                           className="rounded-2xl bg-white/70 px-3 py-2 text-lg font-semibold text-[#426B8E] outline-none"
                         />
                       ) : (
-                        <h3 className="rounded-2xl bg-white/60 px-3 py-2 text-lg font-semibold text-[#426B8E] backdrop-blur-sm">
-                          {person.name}
-                        </h3>
+                        <button
+                          onClick={async () => {
+                            setSelectedPerson(person as any);
+
+                            if (person.id) {
+                              await loadPersonHistory(person.id);
+                            }
+                          }}
+                          className="w-full text-left"
+                        >
+                          <h3 className="rounded-2xl bg-white/60 px-3 py-2 text-lg font-semibold text-[#426B8E] backdrop-blur-sm hover:bg-white/80 transition">
+                            {person.name}
+                          </h3>
+                        </button>
                       )}
                       
                       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -1491,9 +2905,6 @@ const getMonthsForServiceYear = (
                                       [monthKey(person.name)]: "Да",
                                     });
 
-                                    logAction(
-                                      `${person.name}: отметил "Да" (${selectedMonth})`
-                                    );
                                   }}
                                   className={`rounded-xl px-4 py-2 text-sm font-medium ${
                                     participation[monthKey(person.name)] === "Да"
@@ -1511,9 +2922,6 @@ const getMonthsForServiceYear = (
                                       [monthKey(person.name)]: "Нет",
                                     });
 
-                                    logAction(
-                                      `${person.name}: отметил "Нет" (${selectedMonth})`
-                                    );
                                   }}
                                   className={`rounded-xl px-4 py-2 text-sm font-medium ${
                                     participation[monthKey(person.name)] === "Нет"
@@ -1596,7 +3004,7 @@ const getMonthsForServiceYear = (
                         </button>
 
                         {openMenu === index && (
-                          <div className="absolute right-0 mt-2 w-52 rounded-2xl bg-white p-2 shadow-lg z-50">
+                          <div className="absolute right-0 top-10 z-[9999] w-52 rounded-2xl bg-white p-2 shadow-2xl border border-slate-200">
                               <button
                                 onClick={() => {
                                   setEditingPerson(person.name);
@@ -1610,24 +3018,47 @@ const getMonthsForServiceYear = (
                               {person.status === "unbaptized_publisher" && (
                                 <>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const confirmChange = window.confirm(
                                         `Перевести "${person.name}" в возвещатели?`
                                       );
 
                                       if (!confirmChange) return;
 
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          status: "publisher",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+                                      
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name
-                                          ? { ...p, status: "publisher" }
+                                        p.id === person.id
+                                          ? {
+                                              ...p,
+                                              status: "publisher",
+                                              event: "Крестился",
+                                            }
                                           : p
                                       );
 
                                       setPeopleList(updatedPeople);
-                                      setOpenMenu(null);
 
-                                      logAction(
-                                        `${person.name}: крещён / переведён в возвещатели`
+                                      setOpenMenu(null);
+                                      setOpenStatusMenu(null);
+                                    
+
+                                      await logAction(
+                                        `${person.name}: переведён в возвещатели в ${selectedGroup}`
+                                      );
+
+                                      await logAction(
+                                        `${person.name}: крещён / переведён в возвещатели в ${selectedGroup}`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-slate-500 hover:bg-slate-100"
@@ -1640,7 +3071,7 @@ const getMonthsForServiceYear = (
                               <button
                                 onClick={() => {
                                   setGroupMenu(groupMenu === index ? null : index);
-                                  setStatusMenu(null);
+                                  setOpenStatusMenu(null);
                                 }}
                                 className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
                               >
@@ -1649,15 +3080,34 @@ const getMonthsForServiceYear = (
                               {groupMenu === index && (
                                 <div className="ml-3 mt-1 border-l pl-2">
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 1",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 1" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 1" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 1`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 1`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1665,15 +3115,33 @@ const getMonthsForServiceYear = (
                                     Группа 1
                                   </button>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 2",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 2" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 2" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 2`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 2`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1681,15 +3149,33 @@ const getMonthsForServiceYear = (
                                     Группа 2
                                   </button>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 3",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 3" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 3" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 3`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 3`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1697,15 +3183,33 @@ const getMonthsForServiceYear = (
                                     Группа 3
                                   </button>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 4",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 4" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 4" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 4`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 4`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1713,16 +3217,33 @@ const getMonthsForServiceYear = (
                                     Группа 4
                                   </button>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 5",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 5" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 5" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
-                                      setOpenStatusMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 5`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 5`
                                       );
                                     }}
                                     className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1730,15 +3251,33 @@ const getMonthsForServiceYear = (
                                     Группа 5
                                   </button>
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
+                                      const { error } = await supabase
+                                        .from("people")
+                                        .update({
+                                          group_name: "Группа 6",
+                                        })
+                                        .eq("id", person.id);
+
+                                      if (error) {
+                                        console.error(error);
+                                        return;
+                                      }
+
                                       const updatedPeople = peopleList.map((p) =>
-                                        p.name === person.name ? { ...p, group: "Группа 6" } : p
+                                        p.id === person.id
+                                          ? { ...p, group: "Группа 6" }
+                                          : p
                                       );
+
                                       setPeopleList(updatedPeople);
+
                                       setOpenMenu(null);
                                       setGroupMenu(null);
-                                      logAction(
-                                        `${person.name}: перемещён в Группу 6`
+                                      setOpenStatusMenu(null);
+
+                                      await logAction(
+                                        `${person.name}: перемещён из ${person.group} в Группу 6`
                                       );
                                     }}
                                         className="w-full rounded-xl px-3 py-1.5 text-left text-xs text-[#426B8E] hover:bg-slate-100"
@@ -1748,79 +3287,106 @@ const getMonthsForServiceYear = (
                                     </div>
                                   )}
                                   
-                                  <button
-                                    onClick={() =>
-                                      setOpenStatusMenu(
-                                        openStatusMenu === person.name
-                                          ? null
-                                          : person.name
-                                      )
-                                    }
-                                    className="w-full rounded-xl px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
-                                  >
-                                    Выбрать статус
-                                  </button>
-
-                                  {openStatusMenu === person.name && (
-                                    <div className="ml-3 mt-1 space-y-1">
-
+                                  {person.status !== "unbaptized_publisher" && (
+                                    <>
                                       <button
-                                        onClick={() => {
-                                          const confirmChange = window.confirm(
-                                            `Перевести "${person.name}" в возвещатели?`
-                                          );
-
-                                          if (confirmChange) {
-                                            const updatedPeople = peopleList.map((p) =>
-                                              p.name === person.name
-                                                ? {
-                                                    ...p,
-                                                    status: "publisher",
-                                                  }
-                                                : p
-                                            );
-
-                                            setPeopleList(updatedPeople);
-                                            setOpenMenu(null);
-                                            setOpenStatusMenu(null);
-                                          }
-                                        }}
+                                        onClick={() =>
+                                          setOpenStatusMenu(
+                                            openStatusMenu === person.name
+                                              ? null
+                                              : person.name
+                                          )
+                                        }
                                         className="w-full rounded-xl px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
                                       >
-                                        Перевести в возвещатели
+                                        Выбрать статус
                                       </button>
 
-                                      <button
-                                        onClick={() => {
-                                          const confirmChange = window.confirm(
-                                            `Перевести "${person.name}" в общие пионеры?`
-                                          );
+                                      {openStatusMenu === person.name && (
+                                        <div className="ml-3 mt-1 space-y-1">
 
-                                          if (confirmChange) {
-                                            const updatedPeople = peopleList.map((p) =>
-                                              p.name === person.name
-                                                ? {
-                                                    ...p,
+                                          <button
+                                            onClick={() => {
+                                              const confirmChange = window.confirm(
+                                                `Перевести "${person.name}" в возвещатели?`
+                                              );
+
+                                              if (confirmChange) {
+                                                const updatedPeople = peopleList.map((p) =>
+                                                  p.name === person.name
+                                                    ? {
+                                                        ...p,
+                                                        status: "publisher",
+                                                        event: "Перестал быть О П",
+                                                      }
+                                                    : p
+                                                );
+
+                                                setPeopleList(updatedPeople);
+
+                                                setOpenMenu(null);
+                                                setOpenStatusMenu(null);
+                                                setGroupMenu(null);
+                                              }
+                                            }}
+                                            className="w-full rounded-xl px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
+                                          >
+                                            Перевести в возвещатели
+                                          </button>
+
+                                          <button
+                                            onClick={async () => {
+                                              const confirmChange = window.confirm(
+                                                `Перевести "${person.name}" в общие пионеры?`
+                                              );
+
+                                              if (confirmChange) {
+                                                const { error } = await supabase
+                                                  .from("people")
+                                                  .update({
                                                     status: "regular_pioneer",
-                                                  }
-                                                : p
-                                            );
+                                                  })
+                                                  .eq("id", person.id);
 
-                                            setPeopleList(updatedPeople);
-                                            setOpenMenu(null);
-                                            setOpenStatusMenu(null);
+                                                if (error) {
+                                                  console.error(error);
+                                                  return;
+                                                }
 
-                                            logAction(
-                                              `${person.name}: переведён в общие пионеры`
-                                            );
-                                          }
-                                        }}
-                                        className="w-full rounded-xl px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
-                                      >
-                                        Перевести в общие пионеры
-                                      </button>
+                                                const updatedPeople = peopleList.map((p) =>
+                                                  p.id === person.id
+                                                    ? {
+                                                        ...p,
+                                                        status: "regular_pioneer",
+                                                        event: "Стал О П",
+                                                      }
+                                                    : p
+                                                );
 
-                                    </div>
+                                                setPeopleList(updatedPeople);
+
+                                                setAssistantMonth((prev) => ({
+                                                  ...prev,
+                                                  [monthKey(person.name)]: false,
+                                                }));
+
+                                                setOpenMenu(null);
+                                                setOpenStatusMenu(null);
+                                                setGroupMenu(null);
+
+                                                await logAction(
+                                                  `${person.name}: переведён в общие пионеры в (${selectedGroup})`
+                                                );
+                                              }
+                                            }}
+                                            className="w-full rounded-xl px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-100"
+                                          >
+                                            Перевести в общие пионеры
+                                          </button>
+
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                   <hr className="my-2" />
                                   <button
@@ -1879,14 +3445,13 @@ const getMonthsForServiceYear = (
                                     [monthKey(person.name)]: value,
                                   });
 
-                                  logAction(
-                                    `${person.name}: изменил часы на ${value} (${selectedMonth})`
-                                  );
                                 }}
                                 className={`mt-2 w-20 rounded-full px-4 py-2 text-center text-lg font-semibold outline-none ${
-                                assistantMonth[monthKey(person.name)]
-                                    ? "bg-[#EEE7FB]/80 text-[#6E5AA6]"
-                                    : "bg-[#DDECF7]/80 text-[#3F78A8]"
+                                person.status === "regular_pioneer"
+                                  ? "bg-[#DDECF7]/80 text-[#3F78A8]"
+                                  : assistantMonth[monthKey(person.name)]
+                                  ? "bg-[#EEE7FB]/80 text-[#6E5AA6]"
+                                  : "bg-[#DDECF7]/80 text-[#3F78A8]"
                                 }`}
                               />
                              
@@ -1912,9 +3477,6 @@ const getMonthsForServiceYear = (
                                   [monthKey(person.name)]: value,
                                 });
 
-                                logAction(
-                                  `${person.name}: изменил изучения на ${value} (${selectedMonth})`
-                                );
                               }}
                               className="mt-2 w-20 rounded-full bg-[#F3FAFF] px-4 py-2 text-center text-lg font-semibold text-[#426B8E] outline-none"
                             />
@@ -2028,6 +3590,21 @@ const getMonthsForServiceYear = (
                   Изучений: {regularStudies}
                 </div>
               </div>
+
+              <div className="rounded-3xl bg-[#FAFCFE] p-5">
+                <div className="text-sm text-slate-500">
+                  Не сдали отчёт
+                </div>
+
+                <div className="mt-2 text-3xl font-semibold text-[#426B8E]">
+                  {notSubmitted}
+                </div>
+
+                <div className="mt-1 text-sm text-slate-500">
+                  человек
+                </div>
+              </div>
+
             </div>
             </div>
               
@@ -2043,132 +3620,113 @@ const getMonthsForServiceYear = (
                   Сохранить месяц в архив
                 </button>
 
-                <div className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4">
-                  Автосохранение
-                </div>
+                {isSecretary && (
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                  >
+                    Экспорт XLS
+                  </button>
+                )}
 
-                <div className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4">
-                  Работа без интернета
-                </div>
+                {isSecretary && (
+                  <button
+                    onClick={() => {
+                      const data = JSON.stringify(
+                        archive,
+                        null,
+                        2
+                      );
 
-                <button
-                  onClick={exportToExcel}
-                  className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA]"
-                >
-                  Excel экспорт
-                </button>
+                      const blob = new Blob(
+                        [data],
+                        {
+                          type: "application/json",
+                        }
+                      );
 
-                <button
-                  onClick={() => {
-                    const data = JSON.stringify(
-                      archive,
-                      null,
-                      2
-                    );
+                      const url =
+                        URL.createObjectURL(blob);
 
-                    const blob = new Blob(
-                      [data],
-                      {
-                        type: "application/json",
+                      const a =
+                        document.createElement("a");
+
+                      a.href = url;
+                      a.download =
+                        `Архив_${selectedYear}.json`;
+
+                      a.click();
+
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                  >
+                    Резервная копия архива
+                  </button>
+                )}
+                
+               {isSecretary && (
+                  <>
+                    <button
+                      onClick={() =>
+                        fileInputRef.current?.click()
                       }
-                    );
+                      className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                    >
+                      Восстановить архив
+                    </button>
 
-                    const url =
-                      URL.createObjectURL(blob);
+                    <input
+                      type="file"
+                      accept=".json"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file =
+                          e.target.files?.[0];
 
-                    const a =
-                      document.createElement("a");
+                        if (!file) return;
 
-                    a.href = url;
-                    a.download =
-                      `Архив_${selectedYear}.json`;
+                        const reader =
+                          new FileReader();
 
-                    a.click();
+                        reader.onload = (event) => {
+                          try {
+                            const data = JSON.parse(
+                              event.target?.result as string
+                            );
 
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left"
-                >
-                  Резервная копия архива
-                </button>
-                <button
-                  onClick={() =>
-                    fileInputRef.current?.click()
-                  }
-                  className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left"
-                >
-                  Восстановить архив
-                </button>
-                <input
-                  type="file"
-                  accept=".json"
-                  ref={fileInputRef}
-                  className="hidden"
-                  onChange={(e) => {
-                    const file =
-                      e.target.files?.[0];
+                            setArchive(data);
 
-                    if (!file) return;
+                            alert(
+                              "Архив успешно восстановлен"
+                            );
+                          } catch {
+                            alert(
+                              "Ошибка чтения файла"
+                            );
+                          }
+                        };
 
-                    const reader =
-                      new FileReader();
-
-                    reader.onload = (event) => {
-                      try {
-                        const data = JSON.parse(
-                          event.target?.result as string
-                        );
-
-                        setArchive(data);
-
-                        alert(
-                          "Архив успешно восстановлен"
-                        );
-                      } catch {
-                        alert(
-                          "Ошибка чтения файла"
-                        );
-                      }
-                    };
-
-                    reader.readAsText(file);
-                  }}
-                />
+                        reader.readAsText(file);
+                      }}
+                    />
+                  </>
+                )}
+                {isSecretary && (
+                  <button
+                    onClick={() => setCurrentPage("journal")}
+                    className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                  >
+                    Журнал действий
+                  </button>
+                )}
 
               </div>
 
 
 
-              <div className="rounded-[32px] bg-white p-6 shadow-sm">
-                <h2 className="mb-4 text-2xl text-[#426B8E] font-semibold">
-                  Последние действия
-                </h2>
-
-                <div className="space-y-2">
-                  {activityLog
-                    .slice()
-                    .reverse()
-                    .slice(0, 20)
-                    .map((item, index) => (
-                      <div
-                        key={index}
-                        className="rounded-2xl bg-[#FAFCFE] p-3 text-sm"
-                      >
-                        <div className="font-medium text-[#426B8E]">
-                          {item.user}
-                        </div>
-
-                        <div className="text-sm text-slate-500">
-                          {item.action}
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-400">
-                          {new Date(item.date).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
+              
 
               <div className="rounded-[32px] bg-white p-6 shadow-sm">
                 <select
@@ -2184,13 +3742,6 @@ const getMonthsForServiceYear = (
                     </option>
                   ))}
                 </select>
-
-                <button
-                  onClick={() => setShowPioneerReport(true)}
-                  className="rounded-full bg-[#D8ECFA] px-5 py-2 text-sm font-medium text-[#3F78A8]"
-                >
-                  Годовой отчёт пионеров
-                </button>
 
                 <h2 className="mb-4 text-2xl text-[#426B8E] font-semibold">
                   Архив
@@ -2269,7 +3820,7 @@ const getMonthsForServiceYear = (
                             if (!window.confirm("Удалить запись из архива?")) {
                               return;
                             }
-
+                            
                             const archiveId = item.id;
 
                             if (!archiveId) {
@@ -2287,6 +3838,10 @@ const getMonthsForServiceYear = (
                               return;
                             }
 
+                            await logAction(
+                              `Сохранил отчёт: ${selectedMonth}`
+                            );
+
                             setArchive(
                               archive.filter((a) => a.id !== archiveId)
                             );
@@ -2302,6 +3857,74 @@ const getMonthsForServiceYear = (
           </div>
         </div>
       </div>
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[250px] sm:w-[300px] rounded-2xl bg-white p-5 shadow-xl">
+
+            <h2 className="mb-4 text-lg font-semibold text-[#426B8E]">
+              Экспорт XLS
+            </h2>
+
+            <div className="space-y-3">
+
+              <label className="flex items-center gap-3 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={exportType === "serviceYear"}
+                  onChange={() =>
+                    setExportType("serviceYear")
+                  }
+                />
+
+                <span>Служебный год</span>
+              </label>
+
+              <label className="flex items-center gap-3 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={exportType === "lastSixMonths"}
+                  onChange={() =>
+                    setExportType("lastSixMonths")
+                  }
+                />
+
+                <span>Последние 6 месяцев</span>
+              </label>
+
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+
+              <button
+                onClick={() =>
+                  setShowExportModal(false)
+                }
+                className="rounded-xl border px-4 py-2 text-slate-600 text-sm hover:bg-slate-100"
+              >
+                Отмена
+              </button>
+
+              <button
+                onClick={exportReport}
+                className="rounded-xl bg-[#4B84B6] px-4 py-2 text-sm text-white hover:bg-[#3F78A8]"
+              >
+                Скачать
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {saveMessage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="rounded-xl border border-[#D6E3EE] bg-white px-8 py-4 text-sm font-medium text-[#426B8E] shadow-xl">
+            {saveMessage}
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
