@@ -64,12 +64,6 @@ const storage = {
        return fallback;
      }
    },
-
-  set<T>(key: string, value: T) {
-     if (typeof window === "undefined") return;
-
-     localStorage.setItem(key, JSON.stringify(value));
-   },
 };
 
 export default function Home() {
@@ -203,25 +197,11 @@ const getMonthsForServiceYear = (
 
   
 
-  const [assistantMonth, setAssistantMonth] = useState<Record<string, boolean>>(() =>
-    storage.get("assistantMonth", {})
-  );
-
-  const [notes, setNotes] = useState<Record<string, string>>(() =>
-    storage.get("notes", {})
-  );
-
-  const [monthlyHours, setMonthlyHours] = useState<Record<string, number>>(() =>
-    storage.get("monthlyHours", {})
-  );
-
-  const [bibleStudies, setBibleStudies] = useState<Record<string, number>>(() =>
-    storage.get("bibleStudies", {})
-  );
-
-  const [participation, setParticipation] = useState<Record<string, string>>(() =>
-    storage.get("participation", {})
-  );
+  const [assistantMonth, setAssistantMonth] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [monthlyHours, setMonthlyHours] = useState<Record<string, number>>({});
+  const [bibleStudies, setBibleStudies] = useState<Record<string, number>>({});
+  const [participation, setParticipation] = useState<Record<string, string>>({});
 
   const [newName, setNewName] = useState("");
 
@@ -236,11 +216,20 @@ const getMonthsForServiceYear = (
   const normalizeYear = (year: string) =>
     year.replace("–", "-");
 
-  const buildKey = (year: string, month: string, name: string) =>
-    `${normalizeYear(year)}-${month}-${name}`;
+  const getPersonKey = (person: Person) => {
+    if (!person.id) {
+      console.warn("У человека нет id:", person);
+      return person.name;
+    }
 
-  const monthKey = (name: string) =>
-    buildKey(selectedYear, selectedMonth, name);
+    return person.id;
+  };
+
+  const buildKey = (year: string, month: string, personId: string) =>
+    `${normalizeYear(year)}-${month}-${personId}`;
+
+  const monthKey = (person: Person) =>
+    buildKey(selectedYear, selectedMonth, getPersonKey(person));
 
   const [selectedYear, setSelectedYear] = useState<string>(() =>
     storage.get("selectedYear", "2025–2026")
@@ -275,10 +264,10 @@ const getMonthsForServiceYear = (
     for (const item of allMonths) {
 
       const key = buildKey(
-        item.year,
-        item.month,
-        person.name
-      );
+      item.year,
+      item.month,
+      getPersonKey(person)
+    );
 
       const value = participation[key];
 
@@ -400,7 +389,12 @@ const getMonthsForServiceYear = (
     month: string,
     serviceYear: string
   ) => {
-    const key = monthKey(person.name);
+    if (!person.id) {
+      console.error("Нельзя сохранить историю: у человека нет id", person);
+      return;
+    }
+
+    const key = buildKey(serviceYear, month, person.id);
     const { data: previousRecord } = await supabase
     .from("person_history")
     .select(`
@@ -515,74 +509,84 @@ const getMonthsForServiceYear = (
   setPersonHistory(data || []);
 };
 
-const loadAllHistory = async () => {
+const getExportMonthOrder = () => {
+  const yearMonths = getMonthsForServiceYear(selectedYear);
+
+  if (exportType === "serviceYear") {
+    return yearMonths;
+  }
+
+  const currentIndex = yearMonths.indexOf(selectedMonth);
+
+  if (currentIndex === -1) {
+    return yearMonths.slice(-6);
+  }
+
+  return yearMonths.slice(
+    Math.max(0, currentIndex - 5),
+    currentIndex + 1
+  );
+};
+
+const loadHistoryForExport = async () => {
+  const exportMonths = getExportMonthOrder();
 
   const { data, error } = await supabase
     .from("person_history")
-    .select("*");
+    .select("*")
+    .eq("service_year", selectedYear)
+    .in("month", exportMonths);
 
   if (error) {
     console.error(
-      "Ошибка загрузки всей истории:",
+      "Ошибка загрузки истории для экспорта:",
       error
     );
     return [];
   }
 
   return data || [];
-
 };
 
-  useEffect(() => {
-    localStorage.setItem(
-      "peopleList",
-      JSON.stringify(peopleList)
-    );
+const loadMonthCardsFromSupabase = async (
+    serviceYear: string,
+    month: string,
+    groupName: string
+  ) => {
+    const { data, error } = await supabase
+      .from("person_history")
+      .select("*")
+      .eq("service_year", serviceYear)
+      .eq("month", month)
+      .eq("group_name", groupName);
 
-    localStorage.setItem(
-      "archive",
-      JSON.stringify(archive)
-    );
+    if (error) {
+      console.error("Ошибка загрузки карточек месяца:", error);
+      return;
+    }
 
-    localStorage.setItem(
-      "activityLog",
-      JSON.stringify(activityLog)
-    );
+    const nextParticipation: Record<string, string> = {};
+    const nextHours: Record<string, number> = {};
+    const nextStudies: Record<string, number> = {};
+    const nextAssistant: Record<string, boolean> = {};
+    const nextNotes: Record<string, string> = {};
 
-    localStorage.setItem(
-      "monthlyHours",
-      JSON.stringify(monthlyHours)
-    );
+    (data || []).forEach((item) => {
+      const key = buildKey(serviceYear, month, item.person_id);
 
-    localStorage.setItem(
-      "bibleStudies",
-      JSON.stringify(bibleStudies)
-    );
+      nextParticipation[key] = item.participation || "Нет";
+      nextHours[key] = Number(item.hours) || 0;
+      nextStudies[key] = Number(item.studies) || 0;
+      nextAssistant[key] = Boolean(item.assistant_pioneer);
+      nextNotes[key] = item.note || "";
+    });
 
-    localStorage.setItem(
-      "participation",
-      JSON.stringify(participation)
-    );
-
-    localStorage.setItem(
-      "assistantMonth",
-      JSON.stringify(assistantMonth)
-    );
-
-    localStorage.setItem(
-      "notes",
-      JSON.stringify(notes)
-    );
-  }, [
-    peopleList,
-    archive,
-    activityLog,
-    monthlyHours,
-    bibleStudies,
-    participation,
-    assistantMonth,
-    notes,
-  ]);
+    setParticipation(nextParticipation);
+    setMonthlyHours(nextHours);
+    setBibleStudies(nextStudies);
+    setAssistantMonth(nextAssistant);
+    setNotes(nextNotes);
+  };
 
   const handleLogin = () => {
     const user = USERS.find(
@@ -620,23 +624,6 @@ const loadAllHistory = async () => {
 
   useEffect(() => {
     try {
-     
-
-      const assistantLS = localStorage.getItem("assistantMonth");
-      if (assistantLS) setAssistantMonth(JSON.parse(assistantLS));
-
-      const notesLS = localStorage.getItem("notes");
-      if (notesLS) setNotes(JSON.parse(notesLS));
-
-      const hoursLS = localStorage.getItem("monthlyHours");
-      if (hoursLS) setMonthlyHours(JSON.parse(hoursLS));
-
-      const studiesLS = localStorage.getItem("bibleStudies");
-      if (studiesLS) setBibleStudies(JSON.parse(studiesLS));
-
-      const participationLS = localStorage.getItem("participation");
-      if (participationLS) setParticipation(JSON.parse(participationLS));
-
       const monthLS = localStorage.getItem("selectedMonth");
       if (monthLS) setSelectedMonth(monthLS);
 
@@ -645,9 +632,6 @@ const loadAllHistory = async () => {
 
       const groupLS = localStorage.getItem("selectedGroup");
       if (groupLS) setSelectedGroup(groupLS);
-
-      const archiveLS = localStorage.getItem("archive");
-      if (archiveLS) setArchive(JSON.parse(archiveLS));
     } catch (e) {
       console.error(e);
     }
@@ -659,47 +643,10 @@ const loadAllHistory = async () => {
       return;
     }
 
-    localStorage.setItem("peopleList", JSON.stringify(peopleList));
-    localStorage.setItem("assistantMonth", JSON.stringify(assistantMonth));
-    localStorage.setItem("notes", JSON.stringify(notes));
-    localStorage.setItem("monthlyHours", JSON.stringify(monthlyHours));
-    localStorage.setItem("bibleStudies", JSON.stringify(bibleStudies));
-    localStorage.setItem("participation", JSON.stringify(participation));
-
     localStorage.setItem("selectedMonth", selectedMonth);
     localStorage.setItem("selectedYear", selectedYear);
     localStorage.setItem("selectedGroup", selectedGroup);
-
-    localStorage.setItem("archive", JSON.stringify(archive));
-    localStorage.setItem("activityLog", JSON.stringify(activityLog));
-  }, [
-    peopleList,
-    assistantMonth,
-    notes,
-    monthlyHours,
-    bibleStudies,
-    participation,
-    selectedMonth,
-    selectedYear,
-    selectedGroup,
-    archive,
-  ]);
-
-  useEffect(() => {
-    const savedLog =
-      localStorage.getItem("activityLog");
-
-    if (savedLog) {
-      setActivityLog(JSON.parse(savedLog));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "activityLog",
-      JSON.stringify(activityLog)
-    );
-  }, [activityLog]);
+  }, [selectedMonth, selectedYear, selectedGroup]);
 
   useEffect(() => {
     const loadPeople = async () => {
@@ -731,55 +678,64 @@ const loadAllHistory = async () => {
   }, []);
 
   useEffect(() => {
-    const loadArchive = async () => {
-      const { data, error } = await supabase
-        .from("archive")
-        .select("*")
-        .order("created_at", { ascending: false });
+    if (!selectedYear || !selectedMonth || !selectedGroup) {
+      return;
+    }
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+    loadMonthCardsFromSupabase(
+      selectedYear,
+      selectedMonth,
+      selectedGroup
+    );
+  }, [selectedYear, selectedMonth, selectedGroup]);
 
-      if (data) {
-        const archiveData = data.map((item) => ({
-          id: item.id,
+  const loadArchiveFromSupabase = async () => {
+    const { data, error } = await supabase
+      .from("archive")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-          serviceYear: item.service_year,
-          month: item.month,
-          group: item.group_name,
+    if (error) {
+      console.error("Ошибка загрузки архива:", error);
+      return;
+    }
 
-          reports: item.reports,
+    const archiveData = (data || []).map((item) => ({
+      id: item.id,
 
-          publishers: item.publishers,
-          publisherStudies: item.publisher_studies,
-          inactive: item.inactive,
+      serviceYear: item.service_year,
+      month: item.month,
+      group: item.group_name,
 
-          unbaptized: item.unbaptized,
-          unbaptizedStudies: item.unbaptized_studies,
+      reports: item.reports,
 
-          assistants: item.assistants,
-          assistantHours: item.assistant_hours,
-          assistantStudies: item.assistant_studies,
+      publishers: item.publishers,
+      publisherStudies: item.publisher_studies,
+      inactive: item.inactive,
 
-          regulars: item.regulars,
-          regularHours: item.regular_hours,
-          regularStudies: item.regular_studies,
-          regularPioneerDetails:
-            item.regular_pioneer_details ?? [],
+      unbaptized: item.unbaptized,
+      unbaptizedStudies: item.unbaptized_studies,
 
-          totalHours: item.total_hours,
-          totalStudies: item.total_studies,
+      assistants: item.assistants,
+      assistantHours: item.assistant_hours,
+      assistantStudies: item.assistant_studies,
 
-          date: item.date,
-        }));
-      
-        setArchive(archiveData as ArchiveItem[]);
-      }
-    };
+      regulars: item.regulars,
+      regularHours: item.regular_hours,
+      regularStudies: item.regular_studies,
+      regularPioneerDetails: item.regular_pioneer_details ?? [],
 
-    loadArchive();
+      totalHours: item.total_hours,
+      totalStudies: item.total_studies,
+
+      date: item.date,
+    }));
+
+    setArchive(archiveData as ArchiveItem[]);
+  };
+
+  useEffect(() => {
+    loadArchiveFromSupabase();
   }, []);
 
   useEffect(() => {
@@ -829,32 +785,6 @@ const loadAllHistory = async () => {
   }, []);
 
   useEffect(() => {
-    const loadActivityLog = async () => {
-      const { data, error } = await supabase
-        .from("activity_log")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      if (data) {
-        setActivityLog(
-          data.map((item) => ({
-            user: item.user_name,
-            action: item.action,
-            date: item.date,
-          }))
-        );
-      }
-    };
-
-    loadActivityLog();
-  }, []);
-
-  useEffect(() => {
     const savedUser = localStorage.getItem("currentUser");
 
     if (!savedUser) return;
@@ -872,7 +802,7 @@ const loadAllHistory = async () => {
 
   const publishersCount = filteredGroupPeople.filter(
     (person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
 
       return (
         person.status === "publisher" &&
@@ -886,7 +816,7 @@ const loadAllHistory = async () => {
 
   const reportsSubmitted = filteredGroupPeople.filter(
     (person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
       const hours = Number(monthlyHours[key] ?? 0);
 
       const isPublisher =
@@ -916,7 +846,7 @@ const loadAllHistory = async () => {
 
   const notSubmitted =
     filteredGroupPeople.filter((person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
       const hours = Number(monthlyHours[key] ?? 0);
 
       // Общие пионеры обязаны сдать часы
@@ -941,7 +871,7 @@ const loadAllHistory = async () => {
 
   const regularPioneersCount =
     filteredGroupPeople.filter((person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
       const hours = Number(monthlyHours[key] ?? 0);
 
       return (
@@ -952,7 +882,7 @@ const loadAllHistory = async () => {
 
   const assistantPioneersCount =
     filteredGroupPeople.filter((person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
 
       return (
         assistantMonth[key] &&
@@ -965,7 +895,7 @@ const loadAllHistory = async () => {
       (sum, person) =>
         sum +
         (monthlyHours[
-          monthKey(person.name)
+          monthKey(person)
         ] || 0),
       0
     );
@@ -975,13 +905,13 @@ const loadAllHistory = async () => {
       (sum, person) => {
         if (
           assistantMonth[
-            monthKey(person.name)
+            monthKey(person)
           ]
         ) {
           return (
             sum +
             (monthlyHours[
-              monthKey(person.name)
+              monthKey(person)
             ] || 0)
           );
         }
@@ -1002,7 +932,7 @@ const loadAllHistory = async () => {
           return (
             sum +
             (monthlyHours[
-              monthKey(person.name)
+              monthKey(person)
             ] || 0)
           );
         }
@@ -1016,15 +946,15 @@ const loadAllHistory = async () => {
     .filter(
       (person) =>
         person.status === "publisher" &&
-        participation[monthKey(person.name)] === "Да" &&
-        !assistantMonth[monthKey(person.name)] &&
+        participation[monthKey(person)] === "Да" &&
+        !assistantMonth[monthKey(person)] &&
         (person.group || "Группа 1") === selectedGroup
     )
     .reduce(
       (sum, person) =>
         sum +
         (bibleStudies[
-          monthKey(person.name)
+          monthKey(person)
         ] || 0),
       0
     );
@@ -1033,7 +963,7 @@ const loadAllHistory = async () => {
     .filter(
       (person) =>
         assistantMonth[
-          monthKey(person.name)
+          monthKey(person)
         ] &&
         (person.group || "Группа 1") === selectedGroup
     )
@@ -1041,7 +971,7 @@ const loadAllHistory = async () => {
       (sum, person) =>
         sum +
         (bibleStudies[
-          monthKey(person.name)
+          monthKey(person)
         ] || 0),
       0
     );
@@ -1057,13 +987,13 @@ const loadAllHistory = async () => {
       (sum, person) =>
         sum +
         (bibleStudies[
-          monthKey(person.name)
+          monthKey(person)
         ] || 0),
       0
     );
   const unbaptizedCount =
     filteredGroupPeople.filter((person) => {
-      const key = monthKey(person.name);
+      const key = monthKey(person);
 
       return (
         person.status === "unbaptized_publisher" &&
@@ -1081,7 +1011,7 @@ const loadAllHistory = async () => {
           return (
             sum +
             (bibleStudies[
-              monthKey(person.name)
+              monthKey(person)
             ] || 0)
           );
         }
@@ -1143,7 +1073,7 @@ const loadAllHistory = async () => {
           name: person.name,
           hours:
             monthlyHours[
-              monthKey(person.name)
+              monthKey(person)
             ] || 0,
         }));
 
@@ -1311,7 +1241,17 @@ const loadAllHistory = async () => {
         );
       }
 
-      setArchive((prev) => [...prev, archiveItem]);
+      await loadArchiveFromSupabase();
+
+      await loadMonthCardsFromSupabase(
+        selectedYear,
+        selectedMonth,
+        selectedGroup
+      );
+
+      if (selectedPerson?.id) {
+        await loadPersonHistory(selectedPerson.id);
+      }
 
       setSaveMessage("Сохранено");
 
@@ -1373,7 +1313,7 @@ const loadAllHistory = async () => {
       {}
     );
 
-    const monthOrder = getMonthsForServiceYear(selectedYear);
+    const monthOrder = getExportMonthOrder();
 
     rows.push([
       "ФИО",
@@ -1920,7 +1860,9 @@ const loadAllHistory = async () => {
 
   const exportReport = async () => {
 
-    const history = await loadAllHistory();
+    await loadArchiveFromSupabase();
+
+    const history = await loadHistoryForExport();
 
     const {
       workbook,
@@ -1929,37 +1871,6 @@ const loadAllHistory = async () => {
       exportType,
       peopleList
     );
-
-    const groupedByGroup = history.reduce(
-      (acc: any, item: any) => {
-
-        if (!acc[item.group_name]) {
-          acc[item.group_name] = [];
-        }
-
-        acc[item.group_name].push(item);
-
-        return acc;
-
-      },
-      {}
-    );
-
-    let reportData: typeof archive = [];
-
-    if (exportType === "serviceYear") {
-
-      reportData = archive.filter(
-        (item) => item.serviceYear === selectedYear
-      );
-
-    }
-
-    if (exportType === "lastSixMonths") {
-
-      reportData = archive.slice(-6);
-
-    }
 
     setShowExportModal(false);
 
@@ -2902,12 +2813,12 @@ const loadAllHistory = async () => {
                                   onClick={() => {
                                     setParticipation({
                                       ...participation,
-                                      [monthKey(person.name)]: "Да",
+                                      [monthKey(person)]: "Да",
                                     });
 
                                   }}
                                   className={`rounded-xl px-4 py-2 text-sm font-medium ${
-                                    participation[monthKey(person.name)] === "Да"
+                                    participation[monthKey(person)] === "Да"
                                       ? "bg-green-100 text-green-700"
                                       : "bg-white text-slate-500"
                                   }`}
@@ -2919,12 +2830,12 @@ const loadAllHistory = async () => {
                                   onClick={() => {
                                     setParticipation({
                                       ...participation,
-                                      [monthKey(person.name)]: "Нет",
+                                      [monthKey(person)]: "Нет",
                                     });
 
                                   }}
                                   className={`rounded-xl px-4 py-2 text-sm font-medium ${
-                                    participation[monthKey(person.name)] === "Нет"
+                                    participation[monthKey(person)] === "Нет"
                                       ? "bg-red-100 text-red-700"
                                       : "bg-white text-slate-500"
                                   }`}
@@ -2938,7 +2849,7 @@ const loadAllHistory = async () => {
                             {person.status === "publisher" && (
                              <label
                                className={`mt-2 flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                                 assistantMonth[monthKey(person.name)]
+                                 assistantMonth[monthKey(person)]
                                    ? "bg-[#EEE7FB]/90 text-[#6E5AA6]"
                                   : "bg-white/70 text-slate-600"
                                }`}
@@ -2947,20 +2858,20 @@ const loadAllHistory = async () => {
                               <input
                                 type="checkbox"
                                  checked={
-                                    assistantMonth[monthKey(person.name)] || false
+                                    assistantMonth[monthKey(person)] || false
                                   }
                                  onChange={(e) => {
                                   const checked = e.target.checked;
 
                                   setAssistantMonth({
                                     ...assistantMonth,
-                                    [monthKey(person.name)]: checked,
+                                    [monthKey(person)]: checked,
                                   });
 
                                   if (!checked) {
                                     setMonthlyHours({
                                       ...monthlyHours,
-                                      [monthKey(person.name)]: 0,
+                                      [monthKey(person)]: 0,
                                     });
                                   }
                                 }}
@@ -2974,12 +2885,12 @@ const loadAllHistory = async () => {
                             <textarea
                               placeholder="Примечание"
                               value={
-                                notes[monthKey(person.name)] || ""
+                                notes[monthKey(person)] || ""
                               }
                               onChange={(e) =>
                                 setNotes({
                                   ...notes,
-                                  [monthKey(person.name)]: e.target.value,
+                                  [monthKey(person)]: e.target.value,
                                 })
                               }
                               className="mt-3 w-full rounded-2xl bg-white/70 p-3 text-sm text-[#426B8E] outline-none placeholder:text-[#7A96B3]"
@@ -3367,7 +3278,7 @@ const loadAllHistory = async () => {
 
                                                 setAssistantMonth((prev) => ({
                                                   ...prev,
-                                                  [monthKey(person.name)]: false,
+                                                  [monthKey(person)]: false,
                                                 }));
 
                                                 setOpenMenu(null);
@@ -3423,7 +3334,7 @@ const loadAllHistory = async () => {
                         )}
                         </div>
                         
-                        {(assistantMonth[monthKey(person.name)] ||
+                        {(assistantMonth[monthKey(person)] ||
                             person.status === "regular_pioneer") && (
                             <>
                               <div className="mt-2 text-sm font-medium text-slate-500">
@@ -3434,7 +3345,7 @@ const loadAllHistory = async () => {
                                 type="number"
                                 value={
                                   monthlyHours[
-                                    monthKey(person.name)
+                                    monthKey(person)
                                   ] || 0
                                 }
                                 onChange={(e) => {
@@ -3442,14 +3353,14 @@ const loadAllHistory = async () => {
 
                                   setMonthlyHours({
                                     ...monthlyHours,
-                                    [monthKey(person.name)]: value,
+                                    [monthKey(person)]: value,
                                   });
 
                                 }}
                                 className={`mt-2 w-20 rounded-full px-4 py-2 text-center text-lg font-semibold outline-none ${
                                 person.status === "regular_pioneer"
                                   ? "bg-[#DDECF7]/80 text-[#3F78A8]"
-                                  : assistantMonth[monthKey(person.name)]
+                                  : assistantMonth[monthKey(person)]
                                   ? "bg-[#EEE7FB]/80 text-[#6E5AA6]"
                                   : "bg-[#DDECF7]/80 text-[#3F78A8]"
                                 }`}
@@ -3466,7 +3377,7 @@ const loadAllHistory = async () => {
                               type="number"
                               value={
                                 bibleStudies[
-                                  monthKey(person.name)
+                                  monthKey(person)
                                 ] || 0
                               }
                              onChange={(e) => {
@@ -3474,7 +3385,7 @@ const loadAllHistory = async () => {
 
                                 setBibleStudies({
                                   ...bibleStudies,
-                                  [monthKey(person.name)]: value,
+                                  [monthKey(person)]: value,
                                 });
 
                               }}
