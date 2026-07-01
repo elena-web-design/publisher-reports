@@ -119,6 +119,7 @@ const [exportType, setExportType] = useState<
 >("serviceYear");
 
 const [personHistory, setPersonHistory] = useState<any[]>([]);
+const [allPersonHistory, setAllPersonHistory] = useState<any[]>([]);
 
 const getMonthsForServiceYear = (
     serviceYear: string
@@ -231,6 +232,8 @@ const getMonthsForServiceYear = (
   const monthKey = (person: Person) =>
     buildKey(selectedYear, selectedMonth, getPersonKey(person));
 
+  const INACTIVE_AFTER_MISSED_MONTHS = 7;
+
   const [selectedYear, setSelectedYear] = useState<string>(() =>
     storage.get("selectedYear", "2025–2026")
   );
@@ -250,8 +253,11 @@ const getMonthsForServiceYear = (
     });
   };
 
-  const isInactive = (person: Person) => {
-
+  const isInactive = (
+    person: Person,
+    serviceYear = selectedYear,
+    month = selectedMonth
+  ) => {
     if (
       person.status !== "publisher" &&
       person.status !== "unbaptized_publisher"
@@ -259,19 +265,63 @@ const getMonthsForServiceYear = (
       return false;
     }
 
-    let missed = 0;
+    if (!person.id) {
+      return false;
+    }
 
-    for (const item of allMonths) {
-
-      const key = buildKey(
-      item.year,
-      item.month,
-      getPersonKey(person)
+    const targetIndex = allMonths.findIndex(
+      (item) =>
+        item.year === serviceYear &&
+        item.month === month
     );
 
-      const value = participation[key];
+    if (targetIndex === -1) {
+      return false;
+    }
 
-      
+    const participationByMonth = new Map<string, string>();
+
+    allPersonHistory
+      .filter((item) => item.person_id === person.id)
+      .forEach((item) => {
+        const key = buildKey(
+          item.service_year,
+          item.month,
+          item.person_id
+        );
+
+        participationByMonth.set(
+          key,
+          item.participation || "Нет"
+        );
+      });
+
+    const currentKey = buildKey(
+      selectedYear,
+      selectedMonth,
+      person.id
+    );
+
+    if (participation[currentKey] !== undefined) {
+      participationByMonth.set(
+        currentKey,
+        participation[currentKey]
+      );
+    }
+
+    let missed = 0;
+
+    for (let index = 0; index <= targetIndex; index++) {
+      const item = allMonths[index];
+
+      const key = buildKey(
+        item.year,
+        item.month,
+        person.id
+      );
+
+      const value = participationByMonth.get(key);
+
       if (value === undefined) {
         continue;
       }
@@ -281,15 +331,9 @@ const getMonthsForServiceYear = (
       } else {
         missed = 0;
       }
-
-      if (missed >= 6) {
-        return true;
-      }
-
     }
 
-    return false;
-
+    return missed >= INACTIVE_AFTER_MISSED_MONTHS;
   };
 
   const inactiveCount =
@@ -507,6 +551,19 @@ const getMonthsForServiceYear = (
   }
 
   setPersonHistory(data || []);
+};
+
+const loadAllPersonHistoryFromSupabase = async () => {
+  const { data, error } = await supabase
+    .from("person_history")
+    .select("*");
+
+  if (error) {
+    console.error("Ошибка загрузки всей истории:", error);
+    return;
+  }
+
+  setAllPersonHistory(data || []);
 };
 
 const getExportMonthOrder = () => {
@@ -733,6 +790,10 @@ const loadMonthCardsFromSupabase = async (
 
     setArchive(archiveData as ArchiveItem[]);
   };
+
+  useEffect(() => {
+    loadAllPersonHistoryFromSupabase();
+  }, []);
 
   useEffect(() => {
     loadArchiveFromSupabase();
@@ -1243,6 +1304,8 @@ const loadMonthCardsFromSupabase = async (
 
       await loadArchiveFromSupabase();
 
+      await loadAllPersonHistoryFromSupabase();
+
       await loadMonthCardsFromSupabase(
         selectedYear,
         selectedMonth,
@@ -1342,7 +1405,20 @@ const loadMonthCardsFromSupabase = async (
 
         people.get(item.person_id).months[item.month] = item;
 
-        if (item.inactive) {
+        const inactiveForMonth = isInactive(
+          {
+            id: item.person_id,
+            name: item.person_name,
+            status: item.status,
+            hours: item.hours || 0,
+            participation: item.participation || "Нет",
+            group: item.group_name,
+          },
+          item.service_year,
+          item.month
+        );
+
+        if (inactiveForMonth) {
           people.get(item.person_id).inactive = true;
         }
 
@@ -2140,7 +2216,18 @@ const loadMonthCardsFromSupabase = async (
                             </span>
                           )}
 
-                          {item.inactive && (
+                          {isInactive(
+                            {
+                              id: item.person_id,
+                              name: item.person_name,
+                              status: item.status,
+                              hours: item.hours || 0,
+                              participation: item.participation || "Нет",
+                              group: item.group_name,
+                            },
+                            item.service_year,
+                            item.month
+                          ) && (
                             <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
                               Неактивный
                             </span>
