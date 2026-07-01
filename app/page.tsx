@@ -1463,7 +1463,6 @@ const loadMonthCardsFromSupabase = async (
         }
 
         monthOrder.forEach((month) => {
-
           const report = person.months[month];
 
           if (!report) {
@@ -1471,39 +1470,31 @@ const loadMonthCardsFromSupabase = async (
             return;
           }
 
+          const studies =
+            report.studies && report.studies > 0
+              ? ` (${report.studies})`
+              : "";
+
+          const note = report.note?.trim();
+
+          let cellValue = "";
+
           if (
             report.status === "regular_pioneer" ||
             report.assistant_pioneer
           ) {
-
-            const studies =
-              report.studies && report.studies > 0
-                ? ` (${report.studies})`
-                : "";
-
-            row.push(
-              `${report.hours || 0}ч${studies}`
-            );
-
+            cellValue = `${report.hours || 0}ч${studies}`;
+          } else if (report.participation === "Да") {
+            cellValue = `Да${studies}`;
           } else {
-
-            if (report.participation === "Да") {
-
-              const studies =
-                report.studies && report.studies > 0
-                  ? ` (${report.studies})`
-                  : "";
-
-              row.push(`Да${studies}`);
-
-            } else {
-
-              row.push("Нет");
-
-            }
-
+            cellValue = "Нет";
           }
 
+          if (note) {
+            cellValue += `\n${note}`;
+          }
+
+          row.push(cellValue);
         });
 
         rows.push(row);
