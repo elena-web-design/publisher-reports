@@ -336,11 +336,6 @@ const getMonthsForServiceYear = (
     return missed >= INACTIVE_AFTER_MISSED_MONTHS;
   };
 
-  const inactiveCount =
-    peopleList.filter((person) =>
-      isInactive(person)
-    ).length;
-
   const [selectedGroup, setSelectedGroup] = useState<string>(() =>
     storage.get("selectedGroup", "Группа 1")
   );
@@ -860,6 +855,11 @@ const loadMonthCardsFromSupabase = async (
     (person) =>
       (person.group || "Группа 1") === selectedGroup
   );
+
+  const inactiveCount =
+    filteredGroupPeople.filter((person) =>
+      isInactive(person)
+    ).length;
 
   const publishersCount = filteredGroupPeople.filter(
     (person) => {
@@ -1522,7 +1522,7 @@ const loadMonthCardsFromSupabase = async (
     ).length;
 
     const inactiveCount = [...uniquePeople.values()].filter(
-      (p) => p.status === "inactive"
+      (p) => p.inactive
     ).length;
 
     const regularPioneers = [...uniquePeople.values()].filter(
