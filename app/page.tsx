@@ -1583,20 +1583,27 @@ const loadMonthCardsFromSupabase = async (
 
     worksheet["!cols"] = [
       { wch: 30 }, 
-      ...monthOrder.map(() => ({ wch: 12 })),
+      ...monthOrder.map(() => ({ wch: 18 })),
       { wch: 14 },
     ];
 
-    worksheet["!rows"] = rows.map((_, index) => {
+    worksheet["!rows"] = rows.map((row, index) => {
+      if (index === 0) return { hpt: 26 };
+      if (index === 1) return { hpt: 22 };
+      if (index === 2) return { hpt: 22 };
+      if (index === 3) return { hpt: 22 };
+      if (index === 4) return { hpt: 10 };
 
-      if (index === 0) return { hpt: 26 }; 
-      if (index === 1) return { hpt: 22 }; 
-      if (index === 2) return { hpt: 22 }; 
-      if (index === 3) return { hpt: 22 }; 
-      if (index === 4) return { hpt: 10 }; 
+      const maxLineCount = Math.max(
+        1,
+        ...row.map((cell) =>
+          String(cell || "").split("\n").length
+        )
+      );
 
-      return { hpt: 32 };
-
+      return {
+        hpt: Math.max(32, maxLineCount * 18),
+      };
     });
 
     for (const [rowIndex, colorType] of rowColors.entries()) {
