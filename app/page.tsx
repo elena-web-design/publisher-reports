@@ -232,6 +232,12 @@ const getMonthsForServiceYear = (
   const monthKey = (person: Person) =>
     buildKey(selectedYear, selectedMonth, getPersonKey(person));
 
+  const getGroupNumber = (groupName: string) => {
+    const match = groupName.match(/\d+/);
+
+    return match ? Number(match[0]) : 999;
+  };
+
   const INACTIVE_AFTER_MISSED_MONTHS = 7;
 
   const [selectedYear, setSelectedYear] = useState<string>(() =>
@@ -374,7 +380,7 @@ const getMonthsForServiceYear = (
   ];
 
   const [currentPage, setCurrentPage] = useState<
-    "groups" | "people"| "journal"
+    "groups" | "people" | "journal" | "congregationReport"
   >("groups");
 
   const [groups, setGroups] = useState<
@@ -783,6 +789,25 @@ const loadMonthCardsFromSupabase = async (
       date: item.date,
     }));
 
+    const getMonthSortIndex = (serviceYear: string, month: string) => {
+      const monthIndex = getMonthsForServiceYear(serviceYear).indexOf(month);
+      const serviceYearIndex = serviceYears.indexOf(serviceYear);
+
+      return serviceYearIndex * 12 + monthIndex;
+    };
+
+    archiveData.sort((a, b) => {
+      const monthDiff =
+        getMonthSortIndex(b.serviceYear, b.month) -
+        getMonthSortIndex(a.serviceYear, a.month);
+
+      if (monthDiff !== 0) {
+        return monthDiff;
+      }
+
+      return getGroupNumber(a.group) - getGroupNumber(b.group);
+    });
+
     setArchive(archiveData as ArchiveItem[]);
   };
 
@@ -874,6 +899,9 @@ const loadMonthCardsFromSupabase = async (
   ).length;
 
   const [saveMessage, setSaveMessage] = useState("");
+  const [saveMessageType, setSaveMessageType] = useState<
+    "success" | "neutral"
+  >("neutral");
 
   const reportsSubmitted = filteredGroupPeople.filter(
     (person) => {
@@ -1316,7 +1344,8 @@ const loadMonthCardsFromSupabase = async (
         await loadPersonHistory(selectedPerson.id);
       }
 
-      setSaveMessage("Сохранено");
+      setSaveMessageType("success");
+      setSaveMessage("✔ Месяц успешно сохранён в архив.");
 
       setTimeout(() => {
         setSaveMessage("");
@@ -1506,13 +1535,35 @@ const loadMonthCardsFromSupabase = async (
     const uniquePeople = new Map<string, any>();
 
     history.forEach((item: any) => {
+      const inactiveForMonth = isInactive(
+        {
+          id: item.person_id,
+          name: item.person_name,
+          status: item.status,
+          hours: item.hours || 0,
+          participation: item.participation || "Нет",
+          group: item.group_name,
+        },
+        item.service_year,
+        item.month
+      );
 
       if (!uniquePeople.has(item.person_id)) {
         uniquePeople.set(item.person_id, {
           status: item.status,
+          inactive: inactiveForMonth,
         });
+
+        return;
       }
 
+      const existingPerson = uniquePeople.get(item.person_id);
+
+      uniquePeople.set(item.person_id, {
+        ...existingPerson,
+        status: item.status,
+        inactive: existingPerson.inactive || inactiveForMonth,
+      });
     });
 
     const totalPeople = uniquePeople.size;
@@ -2302,6 +2353,138 @@ const loadMonthCardsFromSupabase = async (
     );
   }
 
+  const getCongregationReports = () => {
+    const groupsCount = groups.length;
+
+    if (groupsCount === 0) {
+      return [];
+    }
+
+    const groupedByMonth = archive.reduce(
+      (acc: Record<string, ArchiveItem[]>, item) => {
+        const key = `${item.serviceYear}-${item.month}`;
+
+        if (!acc[key]) {
+          acc[key] = [];
+        }
+
+        acc[key].push(item);
+
+        return acc;
+      },
+      {}
+    );
+
+    return Object.values(groupedByMonth)
+      .filter((items) => {
+        const uniqueGroups = new Set(
+          items.map((item) => item.group)
+        );
+
+        return uniqueGroups.size === groupsCount;
+      })
+      .map((items) => {
+        const firstItem = items[0];
+
+        return {
+          serviceYear: firstItem.serviceYear,
+          month: firstItem.month,
+          reports: items.reduce((sum, item) => sum + item.reports, 0),
+          assistants: items.reduce((sum, item) => sum + item.assistants, 0),
+          assistantHours: items.reduce((sum, item) => sum + item.assistantHours, 0),
+          assistantStudies: items.reduce((sum, item) => sum + item.assistantStudies, 0),
+          regulars: items.reduce((sum, item) => sum + item.regulars, 0),
+          regularHours: items.reduce((sum, item) => sum + item.regularHours, 0),
+          regularStudies: items.reduce((sum, item) => sum + item.regularStudies, 0),
+          totalHours: items.reduce((sum, item) => sum + item.totalHours, 0),
+          totalStudies: items.reduce((sum, item) => sum + item.totalStudies, 0),
+          date: items
+            .map((item) => item.date)
+            .sort()
+            .at(-1),
+        };
+      })
+      .sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+
+        return dateB - dateA;
+      });
+  };
+
+  if (currentPage === "congregationReport") {
+    const congregationReports = getCongregationReports();
+
+    const groupedReports = congregationReports.reduce(
+      (acc: Record<string, any[]>, item) => {
+        if (!acc[item.serviceYear]) {
+          acc[item.serviceYear] = [];
+        }
+
+        acc[item.serviceYear].push(item);
+
+        return acc;
+      },
+      {}
+    );
+
+    return (
+      <main className="min-h-screen bg-[#EAF5FF] p-4 text-[#426B8E]">
+        <div className="mx-auto max-w-3xl">
+          <button
+            onClick={() => setCurrentPage("people")}
+            className="mb-4 rounded-2xl bg-white px-4 py-2 text-sm font-medium text-[#426B8E] shadow-sm"
+          >
+            Назад
+          </button>
+
+          <h1 className="mb-6 text-2xl font-bold">
+            Отчёт собрания
+          </h1>
+
+          {congregationReports.length === 0 && (
+            <div className="rounded-2xl bg-white p-5 text-sm text-slate-500 shadow-sm">
+              Сводные отчёты появятся после того, как все группы сохранят выбранный месяц в архив.
+            </div>
+          )}
+
+          {Object.entries(groupedReports).map(([serviceYear, items]) => (
+            <div key={serviceYear} className="mb-6">
+              <h2 className="mb-3 text-lg font-semibold">
+                {serviceYear}
+              </h2>
+
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div
+                    key={`${item.serviceYear}-${item.month}`}
+                    className="rounded-2xl bg-white p-5 shadow-sm"
+                  >
+                    <div className="text-xl font-semibold text-[#426B8E]">
+                      {item.month}
+                    </div>
+
+                    <div className="mt-3 space-y-1 text-sm text-slate-600">
+                      <div>Всего сдали отчёт {item.reports}</div>
+                      <div>
+                        Подсобных пионеров {item.assistants} ({item.assistantHours} ч, {item.assistantStudies} из)
+                      </div>
+                      <div>
+                        Общих пионеров {item.regulars} ({item.regularHours} ч, {item.regularStudies} из)
+                      </div>
+                      <div>
+                        Общие часы собрания {item.totalHours}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    );
+  }
 
   if (currentPage === "groups") {
     return (
@@ -3429,18 +3612,21 @@ const loadMonthCardsFromSupabase = async (
                               <input
                                 type="number"
                                 value={
-                                  monthlyHours[
-                                    monthKey(person)
-                                  ] || 0
+                                  monthlyHours[monthKey(person)] ?? 0
                                 }
+                                onFocus={(e) => {
+                                  if (Number(e.target.value) === 0) {
+                                    e.target.select();
+                                  }
+                                }}
                                 onChange={(e) => {
-                                  const value = Number(e.target.value);
+                                  const rawValue = e.target.value;
+                                  const value = rawValue === "" ? 0 : Number(rawValue);
 
                                   setMonthlyHours({
                                     ...monthlyHours,
                                     [monthKey(person)]: value,
                                   });
-
                                 }}
                                 className={`mt-2 w-20 rounded-full px-4 py-2 text-center text-lg font-semibold outline-none ${
                                 person.status === "regular_pioneer"
@@ -3461,18 +3647,21 @@ const loadMonthCardsFromSupabase = async (
                             <input
                               type="number"
                               value={
-                                bibleStudies[
-                                  monthKey(person)
-                                ] || 0
+                                bibleStudies[monthKey(person)] ?? 0
                               }
-                             onChange={(e) => {
-                                const value = Number(e.target.value);
+                              onFocus={(e) => {
+                                if (Number(e.target.value) === 0) {
+                                  e.target.select();
+                                }
+                              }}
+                              onChange={(e) => {
+                                const rawValue = e.target.value;
+                                const value = rawValue === "" ? 0 : Number(rawValue);
 
                                 setBibleStudies({
                                   ...bibleStudies,
                                   [monthKey(person)]: value,
                                 });
-
                               }}
                               className="mt-2 w-20 rounded-full bg-[#F3FAFF] px-4 py-2 text-center text-lg font-semibold text-[#426B8E] outline-none"
                             />
@@ -3615,6 +3804,15 @@ const loadMonthCardsFromSupabase = async (
                 >
                   Сохранить месяц в архив
                 </button>
+
+                {isSecretary && (
+                  <button
+                    onClick={() => setCurrentPage("congregationReport")}
+                    className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                  >
+                    Отчёт собрания
+                  </button>
+                )}
 
                 {isSecretary && (
                   <button
@@ -3811,41 +4009,58 @@ const loadMonthCardsFromSupabase = async (
                           ({item.regularHours} ч, {item.regularStudies} изуч.)
                         </div>
 
-                        <button
-                          onClick={async () => {
-                            if (!window.confirm("Удалить запись из архива?")) {
-                              return;
-                            }
-                            
-                            const archiveId = item.id;
+                        {isSecretary && (
+                          <button
+                            onClick={async () => {
+                              const confirmed = window.confirm(
+                                `⚠️ Вы действительно хотите удалить архивную запись?
 
-                            if (!archiveId) {
-                              return;
-                            }
+                        После удаления данные невозможно будет восстановить автоматически.
 
-                            const { error } = await supabase
-                              .from("archive")
-                              .delete()
-                              .eq("id", archiveId);
+                        Для восстановления потребуется повторно внести отчёты.
 
-                            if (error) {
-                              console.error(error);
-                              alert("Ошибка удаления");
-                              return;
-                            }
+                        Продолжить удаление?`
+                              );
 
-                            await logAction(
-                              `Сохранил отчёт: ${selectedMonth}`
-                            );
+                              if (!confirmed) {
+                                return;
+                              }
 
-                            setArchive(
-                              archive.filter((a) => a.id !== archiveId)
-                            );
-                          }}
-                          className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600"
-                        >
-                          Удалить запись
-                        </button>
+                              const archiveId = item.id;
+
+                              if (!archiveId) {
+                                return;
+                              }
+
+                              const { error } = await supabase
+                                .from("archive")
+                                .delete()
+                                .eq("id", archiveId);
+
+                              if (error) {
+                                console.error(error);
+                                alert("Ошибка удаления");
+                                return;
+                              }
+
+                              await logAction(
+                                `Удалил архивную запись: ${item.month} (${item.group})`
+                              );
+
+                              await loadArchiveFromSupabase();
+
+                              setSaveMessageType("neutral");
+                              setSaveMessage("🗑 Архивная запись успешно удалена.");
+
+                              setTimeout(() => {
+                                setSaveMessage("");
+                              }, 2000);
+                            }}
+                            className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600"
+                          >
+                            Удалить запись
+                          </button>
+                        )}
                       </div>
                     ))}
                 </div>
@@ -3915,7 +4130,13 @@ const loadMonthCardsFromSupabase = async (
 
       {saveMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="rounded-xl border border-[#D6E3EE] bg-white px-8 py-4 text-sm font-medium text-[#426B8E] shadow-xl">
+          <div
+            className={`rounded-xl px-8 py-4 text-sm font-medium shadow-xl border ${
+              saveMessageType === "success"
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-[#D6E3EE] bg-white text-[#426B8E]"
+            }`}
+          >
             {saveMessage}
           </div>
         </div>
