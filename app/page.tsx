@@ -2435,7 +2435,7 @@ const loadMonthCardsFromSupabase = async (
             onClick={() => setCurrentPage("people")}
             className="mb-4 rounded-2xl bg-white px-4 py-2 text-sm font-medium text-[#426B8E] shadow-sm"
           >
-            Назад
+            ← Назад
           </button>
 
           <h1 className="mb-6 text-2xl font-bold">
@@ -2465,15 +2465,15 @@ const loadMonthCardsFromSupabase = async (
                     </div>
 
                     <div className="mt-3 space-y-1 text-sm text-slate-600">
-                      <div>Всего сдали отчёт {item.reports}</div>
+                      <div>Всего сдали отчёт: {item.reports}</div>
                       <div>
-                        Подсобных пионеров {item.assistants} ({item.assistantHours} ч, {item.assistantStudies} из)
+                        Подсобных пионеров: {item.assistants} ({item.assistantHours} ч, {item.assistantStudies} из)
                       </div>
                       <div>
-                        Общих пионеров {item.regulars} ({item.regularHours} ч, {item.regularStudies} из)
+                        Общих пионеров: {item.regulars} ({item.regularHours} ч, {item.regularStudies} из)
                       </div>
                       <div>
-                        Общие часы собрания {item.totalHours}
+                        Всего часов : {item.totalHours}
                       </div>
                     </div>
                   </div>
