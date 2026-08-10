@@ -2151,7 +2151,7 @@ const loadMonthCardsFromSupabase = async (
   if (isAttendanceUser || currentPage === "attendance") {
     return (
       <main className="min-h-screen bg-[#EEF5FA] p-6">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex justify-end">
           <button
             onClick={() => {
               localStorage.removeItem("currentUser");
@@ -2921,6 +2921,33 @@ const loadMonthCardsFromSupabase = async (
             ))}
             
           </div>
+
+                {isSecretary && (
+                  <div className="mt-10 flex justify-center">
+                    <button
+                      onClick={() => {
+                        setCurrentPage("congregationReport");
+                      }}
+                      className="
+                        rounded-2xl
+                        border
+                        border-[#8FB8D8]
+                        bg-[#F3FAFF]
+                        px-8
+                        py-3
+                        text-base
+                        font-semibold
+                        text-[#426B8E]
+                        shadow-sm
+                        transition-all
+                        hover:bg-[#E8F5FD]
+                        hover:shadow-md
+                      "
+                    >
+                      Отчёт собрания
+                    </button>
+                  </div>
+                )}
           {isSecretary && (
             <button
               onClick={async () => {
