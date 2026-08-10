@@ -2152,10 +2152,6 @@ const loadMonthCardsFromSupabase = async (
     return (
       <main className="min-h-screen bg-[#EEF5FA] p-6">
         <div className="mb-4 flex items-center justify-between">
-          <div className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]">
-            Посещаемость
-          </div>
-
           <button
             onClick={() => {
               localStorage.removeItem("currentUser");
@@ -2165,7 +2161,7 @@ const loadMonthCardsFromSupabase = async (
             }}
             className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]"
           >
-            Выйти / Сменить роль
+            ↩ Выход
           </button>
         </div>
 
@@ -4236,7 +4232,7 @@ const loadMonthCardsFromSupabase = async (
                         </div>
 
                         <div className="text-sm text-slate-400">
-                          В том числе: обычные {item.publishers}, некрещёные {item.unbaptized}
+                          В том числе: крещёные {item.publishers}, некрещёные {item.unbaptized}
                         </div>
 
                         <div className="text-sm text-slate-500">
@@ -4253,20 +4249,6 @@ const loadMonthCardsFromSupabase = async (
                           Общие: {item.regulars}
                           {" "}
                           ({item.regularHours} ч, {item.regularStudies} изуч.)
-                        </div>
-
-                        <div className="mt-3 rounded-2xl bg-white p-3 text-sm text-slate-500">
-                          <div className="font-medium text-[#426B8E]">
-                            Посещаемость
-                          </div>
-
-                          <div>
-                            Встречи в будние дни: {item.attendanceWeekdayAverage ?? "—"} чел.
-                          </div>
-
-                          <div>
-                            Встречи в выходной день: {item.attendanceWeekendAverage ?? "—"} чел.
-                          </div>
                         </div>
 
                         <button
