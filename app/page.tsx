@@ -22,6 +22,9 @@ type ArchiveItem = {
   publishers: number;
   publisherStudies: number;
 
+  attendanceWeekdayAverage?: number | null;
+  attendanceWeekendAverage?: number | null;
+
   inactive: number;
 
   assistants: number;
@@ -217,6 +220,22 @@ const getMonthsForServiceYear = (
   const normalizeYear = (year: string) =>
     year.replace("–", "-");
 
+  const [attendanceWeekday, setAttendanceWeekday] =
+    useState<(number | "")[]>(["", "", "", "", ""]);
+
+  const [attendanceWeekend, setAttendanceWeekend] =
+    useState<(number | "")[]>(["", "", "", "", ""]);
+
+  const calculateAverage = (values: (number | "")[]) => {
+    const filled = values.filter((value) => value !== "") as number[];
+
+    if (filled.length === 0) return null;
+
+    const sum = filled.reduce((total, value) => total + value, 0);
+
+    return Math.round(sum / filled.length);
+  };
+
   const getPersonKey = (person: Person) => {
     if (!person.id) {
       console.warn("У человека нет id:", person);
@@ -377,10 +396,11 @@ const getMonthsForServiceYear = (
     { login: "Группа 6", password: "12345", name: "Группа 6" },
 
     { login: "Секретарь", password: "12345", name: "Секретарь" },
+    { login: "Посещаемость", password: "12345", name: "Посещаемость" },
   ];
 
   const [currentPage, setCurrentPage] = useState<
-    "groups" | "people" | "journal" | "congregationReport"
+    "groups" | "people"| "journal" | "attendance"
   >("groups");
 
   const [groups, setGroups] = useState<
@@ -394,6 +414,9 @@ const getMonthsForServiceYear = (
 
   const isSecretary =
     currentUser?.name === "Секретарь";
+
+  const isAttendanceUser =
+    currentUser?.name === "Посещаемость";
 
   const [activityLog, setActivityLog] = useState<
     { user: string; action: string; date: string }[]
@@ -670,6 +693,12 @@ const loadMonthCardsFromSupabase = async (
     );
 
     setIsLoggedIn(true);
+
+    if (user.name === "Посещаемость") {
+      setCurrentPage("attendance");
+    } else {
+      setCurrentPage("groups");
+    }
   };
 
   useEffect(() => {
@@ -758,6 +787,17 @@ const loadMonthCardsFromSupabase = async (
       return;
     }
 
+    const { data: attendanceData } = await supabase
+      .from("attendance_reports")
+      .select("*");
+
+    const attendanceMap = new Map(
+      (attendanceData || []).map((item) => [
+        `${item.service_year}-${item.month}`,
+        item,
+      ])
+    );
+
     const archiveData = (data || []).map((item) => ({
       id: item.id,
 
@@ -766,6 +806,12 @@ const loadMonthCardsFromSupabase = async (
       group: item.group_name,
 
       reports: item.reports,
+
+      attendanceWeekdayAverage:
+        attendanceMap.get(`${item.service_year}-${item.month}`)?.weekday_average ?? null,
+
+      attendanceWeekendAverage:
+        attendanceMap.get(`${item.service_year}-${item.month}`)?.weekend_average ?? null,
 
       publishers: item.publishers,
       publisherStudies: item.publisher_studies,
@@ -2060,6 +2106,123 @@ const loadMonthCardsFromSupabase = async (
           </form>
       </div>
       </div>
+    );
+  }
+
+  if (currentPage === "attendance") {
+    return (
+      <main className="min-h-screen bg-[#EEF5FA] p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]">
+            Посещаемость
+          </div>
+
+          <button
+            onClick={() => {
+              localStorage.removeItem("currentUser");
+              setCurrentUser(null);
+              setIsLoggedIn(false);
+              setCurrentPage("groups");
+            }}
+            className="rounded-2xl bg-white px-4 py-2 shadow-sm text-[#426B8E]"
+          >
+            Выйти / Сменить роль
+          </button>
+        </div>
+
+        <div className="mx-auto max-w-3xl space-y-6">
+          <div className="rounded-[32px] bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+                {serviceYears.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+
+              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
+                {availableMonths.map((month) => (
+                  <option key={month} value={month}>{month}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-[32px] bg-white p-6 shadow-sm">
+            {[0, 1, 2, 3, 4].map((index) => (
+              <div key={index} className="mb-4 grid gap-3 sm:grid-cols-3">
+                <div className="font-medium text-[#426B8E]">
+                  Неделя {index + 1}
+                </div>
+
+                <input
+                  type="number"
+                  placeholder="Будний день"
+                  value={attendanceWeekday[index]}
+                  onChange={(e) => {
+                    const next = [...attendanceWeekday];
+                    next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                    setAttendanceWeekday(next);
+                  }}
+                  className="rounded-2xl bg-[#F3FAFF] px-4 py-3 text-[#426B8E]"
+                />
+
+                <input
+                  type="number"
+                  placeholder="Выходной день"
+                  value={attendanceWeekend[index]}
+                  onChange={(e) => {
+                    const next = [...attendanceWeekend];
+                    next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                    setAttendanceWeekend(next);
+                  }}
+                  className="rounded-2xl bg-[#F3FAFF] px-4 py-3 text-[#426B8E]"
+                />
+              </div>
+            ))}
+
+            <div className="mt-6 text-sm text-slate-500">
+              Среднее посещение в будние дни: {calculateAverage(attendanceWeekday) ?? "—"}
+            </div>
+
+            <div className="text-sm text-slate-500">
+              Среднее посещение в выходной день: {calculateAverage(attendanceWeekend) ?? "—"}
+            </div>
+
+            <button
+              onClick={async () => {
+                const weekdayAverage = calculateAverage(attendanceWeekday);
+                const weekendAverage = calculateAverage(attendanceWeekend);
+
+                const { error } = await supabase
+                  .from("attendance_reports")
+                  .upsert(
+                    [{
+                      service_year: selectedYear,
+                      month: selectedMonth,
+                      weekday_values: attendanceWeekday.filter((value) => value !== ""),
+                      weekend_values: attendanceWeekend.filter((value) => value !== ""),
+                      weekday_average: weekdayAverage,
+                      weekend_average: weekendAverage,
+                      updated_at: new Date().toISOString(),
+                    }],
+                    { onConflict: "service_year,month" }
+                  );
+
+                if (error) {
+                  console.error(error);
+                  alert("Ошибка сохранения посещаемости");
+                  return;
+                }
+
+                alert("Посещаемость сохранена");
+              }}
+              className="mt-6 rounded-2xl bg-[#4B84B6] px-5 py-3 text-white"
+            >
+              Сохранить посещаемость
+            </button>
+          </div>
+        </div>
+      </main>
     );
   }
 
@@ -3603,6 +3766,7 @@ const loadMonthCardsFromSupabase = async (
                         </div>
                         
                         {(assistantMonth[monthKey(person)] ||
+                            assistantMonth[monthKey(person)] ||
                             person.status === "regular_pioneer") && (
                             <>
                               <div className="mt-2 text-sm font-medium text-slate-500">
@@ -3620,13 +3784,20 @@ const loadMonthCardsFromSupabase = async (
                                   }
                                 }}
                                 onChange={(e) => {
-                                  const rawValue = e.target.value;
-                                  const value = rawValue === "" ? 0 : Number(rawValue);
+                                  const key = monthKey(person);
+                                  const value = Number(e.target.value);
 
                                   setMonthlyHours({
                                     ...monthlyHours,
-                                    [monthKey(person)]: value,
+                                    [key]: value,
                                   });
+
+                                  if (person.status === "publisher" && value > 0) {
+                                    setAssistantMonth({
+                                      ...assistantMonth,
+                                      [key]: true,
+                                    });
+                                  }
                                 }}
                                 className={`mt-2 w-20 rounded-full px-4 py-2 text-center text-lg font-semibold outline-none ${
                                 person.status === "regular_pioneer"
@@ -3983,18 +4154,17 @@ const loadMonthCardsFromSupabase = async (
                         <hr className="my-2" />
 
                         <div className="text-sm text-slate-500">
-                          Возвещатели: {item.publishers}
-                           {" "}
-                            ({item.publisherStudies} изуч.)
+                          Возвещатели: {item.publishers + item.unbaptized}
+                          {" "}
+                          ({item.publisherStudies + item.unbaptizedStudies} из)
+                        </div>
+
+                        <div className="text-sm text-slate-400">
+                          В том числе: обычные {item.publishers}, некрещёные {item.unbaptized}
                         </div>
 
                         <div className="text-sm text-slate-500">
                           Неактивные: {item.inactive}
-                        </div>
-
-                        <div className="text-sm text-slate-500">
-                          Некрещёные: {item.unbaptized}
-                          ({item.unbaptizedStudies} изуч.)
                         </div>
 
                         <div className="text-sm text-slate-500">
@@ -4009,24 +4179,27 @@ const loadMonthCardsFromSupabase = async (
                           ({item.regularHours} ч, {item.regularStudies} изуч.)
                         </div>
 
-                        {isSecretary && (
-                          <button
-                            onClick={async () => {
-                              const confirmed = window.confirm(
-                                `⚠️ Вы действительно хотите удалить архивную запись?
+                        <div className="mt-3 rounded-2xl bg-white p-3 text-sm text-slate-500">
+                          <div className="font-medium text-[#426B8E]">
+                            Посещаемость
+                          </div>
 
-                        После удаления данные невозможно будет восстановить автоматически.
+                          <div>
+                            Встречи в будние дни: {item.attendanceWeekdayAverage ?? "—"} чел.
+                          </div>
 
-                        Для восстановления потребуется повторно внести отчёты.
+                          <div>
+                            Встречи в выходной день: {item.attendanceWeekendAverage ?? "—"} чел.
+                          </div>
+                        </div>
 
-                        Продолжить удаление?`
-                              );
-
-                              if (!confirmed) {
-                                return;
-                              }
-
-                              const archiveId = item.id;
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm("Удалить запись из архива?")) {
+                              return;
+                            }
+                            
+                            const archiveId = item.id;
 
                               if (!archiveId) {
                                 return;
