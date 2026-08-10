@@ -400,7 +400,7 @@ const getMonthsForServiceYear = (
   ];
 
   const [currentPage, setCurrentPage] = useState<
-    "groups" | "people"| "journal" | "attendance"
+    "groups" | "people" | "journal" | "attendance" | "congregationReport"
   >("groups");
 
   const [groups, setGroups] = useState<
@@ -2057,6 +2057,45 @@ const loadMonthCardsFromSupabase = async (
 
   };
 
+  useEffect(() => {
+    const loadAttendance = async () => {
+      if (!selectedYear || !selectedMonth) return;
+
+      const { data, error } = await supabase
+        .from("attendance_reports")
+        .select("*")
+        .eq("service_year", selectedYear)
+        .eq("month", selectedMonth)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Ошибка загрузки посещаемости:", error);
+        return;
+      }
+
+      const weekdayValues = data?.weekday_values ?? [];
+      const weekendValues = data?.weekend_values ?? [];
+
+      setAttendanceWeekday([
+        weekdayValues[0] ?? "",
+        weekdayValues[1] ?? "",
+        weekdayValues[2] ?? "",
+        weekdayValues[3] ?? "",
+        weekdayValues[4] ?? "",
+      ]);
+
+      setAttendanceWeekend([
+        weekendValues[0] ?? "",
+        weekendValues[1] ?? "",
+        weekendValues[2] ?? "",
+        weekendValues[3] ?? "",
+        weekendValues[4] ?? "",
+      ]);
+    };
+
+    loadAttendance();
+  }, [selectedYear, selectedMonth]);
+
   if (!mounted) return null;
   if (!isLoggedIn) {
     return (
@@ -2109,7 +2148,7 @@ const loadMonthCardsFromSupabase = async (
     );
   }
 
-  if (currentPage === "attendance") {
+  if (isAttendanceUser || currentPage === "attendance") {
     return (
       <main className="min-h-screen bg-[#EEF5FA] p-6">
         <div className="mb-4 flex items-center justify-between">
@@ -2553,6 +2592,17 @@ const loadMonthCardsFromSupabase = async (
           serviceYear: firstItem.serviceYear,
           month: firstItem.month,
           reports: items.reduce((sum, item) => sum + item.reports, 0),
+
+          publishers: items.reduce(
+            (sum, item) => sum + item.publishers + item.unbaptized,
+            0
+          ),
+
+          publisherStudies: items.reduce(
+            (sum, item) => sum + item.publisherStudies + item.unbaptizedStudies,
+            0
+          ),
+
           assistants: items.reduce((sum, item) => sum + item.assistants, 0),
           assistantHours: items.reduce((sum, item) => sum + item.assistantHours, 0),
           assistantStudies: items.reduce((sum, item) => sum + item.assistantStudies, 0),
@@ -2561,6 +2611,13 @@ const loadMonthCardsFromSupabase = async (
           regularStudies: items.reduce((sum, item) => sum + item.regularStudies, 0),
           totalHours: items.reduce((sum, item) => sum + item.totalHours, 0),
           totalStudies: items.reduce((sum, item) => sum + item.totalStudies, 0),
+          attendanceWeekdayAverage:
+            items.find((item) => item.attendanceWeekdayAverage != null)
+              ?.attendanceWeekdayAverage ?? null,
+
+          attendanceWeekendAverage:
+            items.find((item) => item.attendanceWeekendAverage != null)
+              ?.attendanceWeekendAverage ?? null,
           date: items
             .map((item) => item.date)
             .sort()
@@ -2629,6 +2686,11 @@ const loadMonthCardsFromSupabase = async (
 
                     <div className="mt-3 space-y-1 text-sm text-slate-600">
                       <div>Всего сдали отчёт: {item.reports}</div>
+
+                      <div>
+                        Возвещатели: {item.publishers} ({item.publisherStudies} из)
+                      </div>
+
                       <div>
                         Подсобных пионеров: {item.assistants} ({item.assistantHours} ч, {item.assistantStudies} из)
                       </div>
@@ -2637,6 +2699,20 @@ const loadMonthCardsFromSupabase = async (
                       </div>
                       <div>
                         Всего часов : {item.totalHours}
+                      </div>
+
+                      <div className="mt-3 rounded-2xl bg-[#F3FAFF] p-3">
+                        <div className="font-medium text-[#426B8E]">
+                          Посещаемость
+                        </div>
+
+                        <div>
+                          Встречи в будние дни: {item.attendanceWeekdayAverage ?? "—"} чел.
+                        </div>
+
+                        <div>
+                          Встречи в выходной день: {item.attendanceWeekendAverage ?? "—"} чел.
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3765,7 +3841,7 @@ const loadMonthCardsFromSupabase = async (
                         )}
                         </div>
                         
-                        {(assistantMonth[monthKey(person)] ||
+                        {(person.status === "publisher" ||
                             assistantMonth[monthKey(person)] ||
                             person.status === "regular_pioneer") && (
                             <>
@@ -4233,7 +4309,6 @@ const loadMonthCardsFromSupabase = async (
                           >
                             Удалить запись
                           </button>
-                        )}
                       </div>
                     ))}
                 </div>
