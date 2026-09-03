@@ -117,6 +117,9 @@ const [selectedPerson, setSelectedPerson] =
 const [showExportModal, setShowExportModal] =
   useState(false);
 
+const [showAttendanceExportModal, setShowAttendanceExportModal] =
+  useState(false);
+
 const [exportType, setExportType] = useState<
   "serviceYear" | "lastSixMonths"
 >("serviceYear");
@@ -234,6 +237,74 @@ const getMonthsForServiceYear = (
     const sum = filled.reduce((total, value) => total + value, 0);
 
     return Math.round(sum / filled.length);
+  };
+
+  const getLastFilledAttendanceWeekIndex = (
+    weekdayValues: (number | "")[],
+    weekendValues: (number | "")[]
+  ) => {
+    for (let index = 4; index >= 0; index--) {
+      if (
+        weekdayValues[index] !== "" ||
+        weekendValues[index] !== ""
+      ) {
+        return index;
+      }
+    }
+
+    return -1;
+  };
+
+  const getCompletedAttendanceValues = (
+    values: (number | "")[],
+    lastWeekIndex: number
+  ) =>
+    values
+      .slice(0, lastWeekIndex + 1)
+      .filter((value) => value !== "") as number[];
+
+  const calculateAttendanceAverage = (
+    values: (number | "")[],
+    lastWeekIndex: number
+  ) => {
+    const completedValues = getCompletedAttendanceValues(
+      values,
+      lastWeekIndex
+    );
+
+    if (completedValues.length === 0) return null;
+
+    const sum = completedValues.reduce(
+      (total, value) => total + value,
+      0
+    );
+
+    return Math.round(sum / completedValues.length);
+  };
+
+  const hasMissingAttendanceData = (
+    weekdayValues: (number | "")[],
+    weekendValues: (number | "")[]
+  ) => {
+    const lastWeekIndex = getLastFilledAttendanceWeekIndex(
+      weekdayValues,
+      weekendValues
+    );
+
+    if (lastWeekIndex === -1) {
+      return true;
+    }
+
+    for (let index = 0; index <= lastWeekIndex; index++) {
+      if (
+        weekdayValues[index] === "" ||
+        weekendValues[index] === ""
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   const getPersonKey = (person: Person) => {
@@ -2057,6 +2128,318 @@ const loadMonthCardsFromSupabase = async (
 
   };
 
+  const getAttendanceArray = (
+    report: any,
+    keys: string[]
+  ) => {
+    for (const key of keys) {
+      if (Array.isArray(report?.[key])) {
+        return report[key];
+      }
+    }
+
+    return [];
+  };
+
+  const getAttendanceCellValue = (
+    values: any[],
+    index: number
+  ) => {
+    const value = values[index];
+
+    if (value === "" || value === null || value === undefined) {
+      return "—";
+    }
+
+    return Number(value) || 0;
+  };
+
+  const getAttendanceTotalValue = (
+    zoomValues: any[],
+    hallValues: any[],
+    totalValues: any[],
+    index: number
+  ) => {
+    const totalValue = totalValues[index];
+
+    if (
+      totalValue !== "" &&
+      totalValue !== null &&
+      totalValue !== undefined
+    ) {
+      return Number(totalValue) || 0;
+    }
+
+    const zoomValue = zoomValues[index];
+    const hallValue = hallValues[index];
+
+    if (
+      (zoomValue === "" ||
+        zoomValue === null ||
+        zoomValue === undefined) &&
+      (hallValue === "" ||
+        hallValue === null ||
+        hallValue === undefined)
+    ) {
+      return "—";
+    }
+
+    return (Number(zoomValue) || 0) + (Number(hallValue) || 0);
+  };
+
+  const exportAttendanceReport = async () => {
+    const exportMonths = getExportMonthOrder();
+
+    const { data, error } = await supabase
+      .from("attendance_reports")
+      .select("*")
+      .eq("service_year", selectedYear)
+      .in("month", exportMonths);
+
+    if (error) {
+      console.error("Ошибка выгрузки посещаемости:", error);
+      alert("Ошибка выгрузки посещаемости");
+      return;
+    }
+
+    const reportsByMonth = new Map(
+      (data || []).map((item: any) => [
+        item.month,
+        item,
+      ])
+    );
+
+    const rows: any[][] = [
+      [
+        exportType === "serviceYear"
+          ? "ПОСЕЩАЕМОСТЬ ЗА СЛУЖЕБНЫЙ ГОД"
+          : "ПОСЕЩАЕМОСТЬ ЗА ПОСЛЕДНИЕ 6 МЕСЯЦЕВ",
+      ],
+      [
+        exportType === "serviceYear"
+          ? selectedYear
+          : "",
+      ],
+      [
+        "Дата создания:",
+        new Date().toLocaleDateString("ru-RU"),
+      ],
+      [],
+      [
+        "Месяц",
+        "Неделя",
+        "Будний Zoom",
+        "Будний зал",
+        "Будний всего",
+        "Выходной Zoom",
+        "Выходной зал",
+        "Выходной всего",
+      ],
+    ];
+
+    const summaryRows = new Set<number>();
+
+    exportMonths.forEach((month) => {
+      const report = reportsByMonth.get(month);
+
+      const weekdayZoomValues = getAttendanceArray(report, [
+        "weekday_zoom_values",
+        "weekdayZoomValues",
+      ]);
+      const weekdayHallValues = getAttendanceArray(report, [
+        "weekday_hall_values",
+        "weekdayHallValues",
+      ]);
+      const weekdayTotalValues = getAttendanceArray(report, [
+        "weekday_total_values",
+        "weekday_values",
+        "weekdayValues",
+      ]);
+
+      const weekendZoomValues = getAttendanceArray(report, [
+        "weekend_zoom_values",
+        "weekendZoomValues",
+      ]);
+      const weekendHallValues = getAttendanceArray(report, [
+        "weekend_hall_values",
+        "weekendHallValues",
+      ]);
+      const weekendTotalValues = getAttendanceArray(report, [
+        "weekend_total_values",
+        "weekend_values",
+        "weekendValues",
+      ]);
+
+      for (let index = 0; index < 5; index++) {
+        rows.push([
+          month,
+          index + 1,
+          getAttendanceCellValue(
+            weekdayZoomValues,
+            index
+          ),
+          getAttendanceCellValue(
+            weekdayHallValues,
+            index
+          ),
+          getAttendanceTotalValue(
+            weekdayZoomValues,
+            weekdayHallValues,
+            weekdayTotalValues,
+            index
+          ),
+          getAttendanceCellValue(
+            weekendZoomValues,
+            index
+          ),
+          getAttendanceCellValue(
+            weekendHallValues,
+            index
+          ),
+          getAttendanceTotalValue(
+            weekendZoomValues,
+            weekendHallValues,
+            weekendTotalValues,
+            index
+          ),
+        ]);
+      }
+
+      summaryRows.add(rows.length);
+      rows.push([
+        "Среднее за месяц",
+        "",
+        "",
+        "Будний день",
+        report?.weekday_average ?? "—",
+        "",
+        "Выходной день",
+        report?.weekend_average ?? "—",
+      ]);
+
+      rows.push([]);
+    });
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    worksheet["!cols"] = [
+      { wch: 20 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 18 },
+    ];
+
+    worksheet["!merges"] = [
+      {
+        s: { r: 0, c: 0 },
+        e: { r: 0, c: 7 },
+      },
+      {
+        s: { r: 1, c: 0 },
+        e: { r: 1, c: 7 },
+      },
+    ];
+
+    const range = XLSX.utils.decode_range(
+      worksheet["!ref"] || "A1"
+    );
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const address = XLSX.utils.encode_cell({
+          r: R,
+          c: C,
+        });
+
+        if (!worksheet[address]) {
+          worksheet[address] = {
+            t: "s",
+            v: "",
+          };
+        }
+
+        const isTitle = R === 0;
+        const isSubtitle = R === 1;
+        const isHeader = R === 4;
+        const isSummary = summaryRows.has(R);
+
+        worksheet[address].s = {
+          font: {
+            name: "Calibri",
+            sz: isTitle ? 18 : 11,
+            bold: isTitle || isSubtitle || isHeader || isSummary,
+            color: {
+              rgb: isHeader || isSummary ? "FFFFFF" : "426B8E",
+            },
+          },
+          alignment: {
+            horizontal:
+              C === 0 && !isTitle && !isSubtitle
+                ? "left"
+                : "center",
+            vertical: "center",
+            wrapText: true,
+          },
+          fill:
+            isHeader || isSummary
+              ? { fgColor: { rgb: "4B84B6" } }
+              : R > 4 && R % 2 === 0
+                ? { fgColor: { rgb: "F3FAFF" } }
+                : undefined,
+          border: {
+            top: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            bottom: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            left: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+            right: {
+              style: "thin",
+              color: { rgb: "D9D9D9" },
+            },
+          },
+        };
+      }
+    }
+
+    worksheet["!freeze"] = {
+      xSplit: 0,
+      ySplit: 5,
+    };
+
+    worksheet["!pageSetup"] = {
+      orientation: "landscape",
+      fitToWidth: 1,
+      fitToHeight: 0,
+    };
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Посещаемость"
+    );
+
+    setShowAttendanceExportModal(false);
+
+    const fileName =
+      exportType === "serviceYear"
+        ? `Посещаемость_${selectedYear}.xlsx`
+        : "Посещаемость_последние_6_месяцев.xlsx";
+
+    XLSX.writeFile(workbook, fileName);
+  };
+
   useEffect(() => {
     const loadAttendance = async () => {
       if (!selectedYear || !selectedMonth) return;
@@ -2148,6 +2531,24 @@ const loadMonthCardsFromSupabase = async (
     );
   }
 
+  const attendanceLastWeekIndex =
+    getLastFilledAttendanceWeekIndex(
+      attendanceWeekday,
+      attendanceWeekend
+    );
+
+  const attendanceWeekdayAverage =
+    calculateAttendanceAverage(
+      attendanceWeekday,
+      attendanceLastWeekIndex
+    );
+
+  const attendanceWeekendAverage =
+    calculateAttendanceAverage(
+      attendanceWeekend,
+      attendanceLastWeekIndex
+    );
+
   if (isAttendanceUser || currentPage === "attendance") {
     return (
       <main className="min-h-screen bg-[#EEF5FA] p-6">
@@ -2216,17 +2617,56 @@ const loadMonthCardsFromSupabase = async (
             ))}
 
             <div className="mt-6 text-sm text-slate-500">
-              Среднее посещение в будние дни: {calculateAverage(attendanceWeekday) ?? "—"}
+              Среднее посещение в будние дни: {attendanceWeekdayAverage ?? "—"}
             </div>
 
             <div className="text-sm text-slate-500">
-              Среднее посещение в выходной день: {calculateAverage(attendanceWeekend) ?? "—"}
+              Среднее посещение в выходной день: {attendanceWeekendAverage ?? "—"}
             </div>
 
             <button
               onClick={async () => {
-                const weekdayAverage = calculateAverage(attendanceWeekday);
-                const weekendAverage = calculateAverage(attendanceWeekend);
+                if (
+                  hasMissingAttendanceData(
+                    attendanceWeekday,
+                    attendanceWeekend
+                  )
+                ) {
+                  alert(
+                    "Не все данные внесены. Проверьте заполнение всех недель перед завершением месяца."
+                  );
+                  return;
+                }
+
+                const lastWeekIndex =
+                  getLastFilledAttendanceWeekIndex(
+                    attendanceWeekday,
+                    attendanceWeekend
+                  );
+
+                const weekdayValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekday,
+                    lastWeekIndex
+                  );
+
+                const weekendValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekend,
+                    lastWeekIndex
+                  );
+
+                const weekdayAverage =
+                  calculateAttendanceAverage(
+                    attendanceWeekday,
+                    lastWeekIndex
+                  );
+
+                const weekendAverage =
+                  calculateAttendanceAverage(
+                    attendanceWeekend,
+                    lastWeekIndex
+                  );
 
                 const { error } = await supabase
                   .from("attendance_reports")
@@ -2234,8 +2674,8 @@ const loadMonthCardsFromSupabase = async (
                     [{
                       service_year: selectedYear,
                       month: selectedMonth,
-                      weekday_values: attendanceWeekday.filter((value) => value !== ""),
-                      weekend_values: attendanceWeekend.filter((value) => value !== ""),
+                      weekday_values: weekdayValues,
+                      weekend_values: weekendValues,
                       weekday_average: weekdayAverage,
                       weekend_average: weekendAverage,
                       updated_at: new Date().toISOString(),
@@ -2249,11 +2689,11 @@ const loadMonthCardsFromSupabase = async (
                   return;
                 }
 
-                alert("Посещаемость сохранена");
+                alert("Месяц завершён. Посещаемость сохранена");
               }}
               className="mt-6 rounded-2xl bg-[#4B84B6] px-5 py-3 text-white"
             >
-              Сохранить посещаемость
+              Завершить месяц и рассчитать
             </button>
           </div>
         </div>
@@ -4096,6 +4536,18 @@ const loadMonthCardsFromSupabase = async (
                 {isSecretary && (
                   <button
                     onClick={() => {
+                      setExportType("lastSixMonths");
+                      setShowAttendanceExportModal(true);
+                    }}
+                    className="rounded-2xl bg-[#FAFCFE] text-[#426B8E] px-4 py-4 text-left hover:bg-[#EEF5FA] transition"
+                  >
+                    Скачать посещаемость в Excel
+                  </button>
+                )}
+
+                {isSecretary && (
+                  <button
+                    onClick={() => {
                       const data = JSON.stringify(
                         archive,
                         null,
@@ -4374,6 +4826,66 @@ const loadMonthCardsFromSupabase = async (
 
               <button
                 onClick={exportReport}
+                className="rounded-xl bg-[#4B84B6] px-4 py-2 text-sm text-white hover:bg-[#3F78A8]"
+              >
+                Скачать
+              </button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {showAttendanceExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[250px] sm:w-[300px] rounded-2xl bg-white p-5 shadow-xl">
+
+            <h2 className="mb-4 text-lg font-semibold text-[#426B8E]">
+              Посещаемость в Excel
+            </h2>
+
+            <div className="space-y-3">
+
+              <label className="flex items-center gap-3 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={exportType === "lastSixMonths"}
+                  onChange={() =>
+                    setExportType("lastSixMonths")
+                  }
+                />
+
+                <span>За последние 6 месяцев</span>
+              </label>
+
+              <label className="flex items-center gap-3 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={exportType === "serviceYear"}
+                  onChange={() =>
+                    setExportType("serviceYear")
+                  }
+                />
+
+                <span>За служебный год</span>
+              </label>
+
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+
+              <button
+                onClick={() =>
+                  setShowAttendanceExportModal(false)
+                }
+                className="rounded-xl border px-4 py-2 text-slate-600 text-sm hover:bg-slate-100"
+              >
+                Отмена
+              </button>
+
+              <button
+                onClick={exportAttendanceReport}
                 className="rounded-xl bg-[#4B84B6] px-4 py-2 text-sm text-white hover:bg-[#3F78A8]"
               >
                 Скачать
