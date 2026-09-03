@@ -4525,10 +4525,10 @@ const loadMonthCardsFromSupabase = async (
                                     [key]: value,
                                   });
 
-                                  if (person.status === "publisher" && value > 0) {
-                                    setAssistantMonth({
-                                      ...assistantMonth,
-                                      [key]: true,
+                                  if (value > 0) {
+                                    setParticipation({
+                                      ...participation,
+                                      [key]: "Да",
                                     });
                                   }
                                 }}
