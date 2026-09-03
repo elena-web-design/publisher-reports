@@ -2625,7 +2625,7 @@ const loadMonthCardsFromSupabase = async (
           </button>
         </div>
 
-        <div className="mx-auto max-w-3xl space-y-6">
+        <div className="mx-auto w-full max-w-7xl space-y-6">
           <div className="rounded-[32px] bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row">
               <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
@@ -2644,7 +2644,7 @@ const loadMonthCardsFromSupabase = async (
 
           <div className="rounded-[32px] bg-white p-6 shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+              <table className="w-full min-w-[760px] md:min-w-0 border-separate border-spacing-y-2 text-sm">
                 <thead>
                   <tr className="text-[#426B8E]">
                     <th className="px-3 py-2 text-left">
