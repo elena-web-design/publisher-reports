@@ -2880,6 +2880,10 @@ const loadMonthCardsFromSupabase = async (
                   return;
                 }
 
+                await logAction(
+                  `Посещаемость: сохранён отчёт за ${selectedMonth} (${selectedYear})`
+                );
+
                 alert("Месяц завершён. Посещаемость сохранена");
               }}
               className="mt-6 rounded-2xl bg-[#4B84B6] px-5 py-3 text-white"
@@ -4495,9 +4499,8 @@ const loadMonthCardsFromSupabase = async (
                         )}
                         </div>
                         
-                        {(person.status === "publisher" ||
-                            assistantMonth[monthKey(person)] ||
-                            person.status === "regular_pioneer") && (
+                        {(assistantMonth[monthKey(person)] ||
+                           person.status === "regular_pioneer") && (
                             <>
                               <div className="mt-2 text-sm font-medium text-slate-500">
                                 Часы
