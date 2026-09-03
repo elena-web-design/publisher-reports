@@ -223,10 +223,16 @@ const getMonthsForServiceYear = (
   const normalizeYear = (year: string) =>
     year.replace("–", "-");
 
-  const [attendanceWeekday, setAttendanceWeekday] =
+  const [attendanceWeekdayZoom, setAttendanceWeekdayZoom] =
     useState<(number | "")[]>(["", "", "", "", ""]);
 
-  const [attendanceWeekend, setAttendanceWeekend] =
+  const [attendanceWeekdayHall, setAttendanceWeekdayHall] =
+    useState<(number | "")[]>(["", "", "", "", ""]);
+
+  const [attendanceWeekendZoom, setAttendanceWeekendZoom] =
+    useState<(number | "")[]>(["", "", "", "", ""]);
+
+  const [attendanceWeekendHall, setAttendanceWeekendHall] =
     useState<(number | "")[]>(["", "", "", "", ""]);
 
   const calculateAverage = (values: (number | "")[]) => {
@@ -240,13 +246,13 @@ const getMonthsForServiceYear = (
   };
 
   const getLastFilledAttendanceWeekIndex = (
-    weekdayValues: (number | "")[],
-    weekendValues: (number | "")[]
+    ...attendanceValues: (number | "")[][]
   ) => {
     for (let index = 4; index >= 0; index--) {
       if (
-        weekdayValues[index] !== "" ||
-        weekendValues[index] !== ""
+        attendanceValues.some(
+          (values) => values[index] !== ""
+        )
       ) {
         return index;
       }
@@ -283,12 +289,10 @@ const getMonthsForServiceYear = (
   };
 
   const hasMissingAttendanceData = (
-    weekdayValues: (number | "")[],
-    weekendValues: (number | "")[]
+    ...attendanceValues: (number | "")[][]
   ) => {
     const lastWeekIndex = getLastFilledAttendanceWeekIndex(
-      weekdayValues,
-      weekendValues
+      ...attendanceValues
     );
 
     if (lastWeekIndex === -1) {
@@ -297,8 +301,9 @@ const getMonthsForServiceYear = (
 
     for (let index = 0; index <= lastWeekIndex; index++) {
       if (
-        weekdayValues[index] === "" ||
-        weekendValues[index] === ""
+        attendanceValues.some(
+          (values) => values[index] === ""
+        )
       ) {
         return true;
       }
@@ -306,6 +311,28 @@ const getMonthsForServiceYear = (
 
     return false;
   };
+
+  const getAttendanceTotal = (
+    zoomValue: number | "",
+    hallValue: number | ""
+  ) => {
+    if (zoomValue === "" && hallValue === "") {
+      return "";
+    }
+
+    return (Number(zoomValue) || 0) + (Number(hallValue) || 0);
+  };
+
+  const getAttendanceTotals = (
+    zoomValues: (number | "")[],
+    hallValues: (number | "")[]
+  ) =>
+    zoomValues.map((zoomValue, index) =>
+      getAttendanceTotal(
+        zoomValue,
+        hallValues[index]
+      )
+    );
 
   const getPersonKey = (person: Person) => {
     if (!person.id) {
@@ -2456,23 +2483,41 @@ const loadMonthCardsFromSupabase = async (
         return;
       }
 
-      const weekdayValues = data?.weekday_values ?? [];
-      const weekendValues = data?.weekend_values ?? [];
+      const weekdayZoomValues = data?.weekday_zoom_values ?? [];
+      const weekdayHallValues = data?.weekday_hall_values ?? [];
+      const weekendZoomValues = data?.weekend_zoom_values ?? [];
+      const weekendHallValues = data?.weekend_hall_values ?? [];
 
-      setAttendanceWeekday([
-        weekdayValues[0] ?? "",
-        weekdayValues[1] ?? "",
-        weekdayValues[2] ?? "",
-        weekdayValues[3] ?? "",
-        weekdayValues[4] ?? "",
+      setAttendanceWeekdayZoom([
+        weekdayZoomValues[0] ?? "",
+        weekdayZoomValues[1] ?? "",
+        weekdayZoomValues[2] ?? "",
+        weekdayZoomValues[3] ?? "",
+        weekdayZoomValues[4] ?? "",
       ]);
 
-      setAttendanceWeekend([
-        weekendValues[0] ?? "",
-        weekendValues[1] ?? "",
-        weekendValues[2] ?? "",
-        weekendValues[3] ?? "",
-        weekendValues[4] ?? "",
+      setAttendanceWeekdayHall([
+        weekdayHallValues[0] ?? "",
+        weekdayHallValues[1] ?? "",
+        weekdayHallValues[2] ?? "",
+        weekdayHallValues[3] ?? "",
+        weekdayHallValues[4] ?? "",
+      ]);
+
+      setAttendanceWeekendZoom([
+        weekendZoomValues[0] ?? "",
+        weekendZoomValues[1] ?? "",
+        weekendZoomValues[2] ?? "",
+        weekendZoomValues[3] ?? "",
+        weekendZoomValues[4] ?? "",
+      ]);
+
+      setAttendanceWeekendHall([
+        weekendHallValues[0] ?? "",
+        weekendHallValues[1] ?? "",
+        weekendHallValues[2] ?? "",
+        weekendHallValues[3] ?? "",
+        weekendHallValues[4] ?? "",
       ]);
     };
 
@@ -2533,19 +2578,33 @@ const loadMonthCardsFromSupabase = async (
 
   const attendanceLastWeekIndex =
     getLastFilledAttendanceWeekIndex(
-      attendanceWeekday,
-      attendanceWeekend
+      attendanceWeekdayZoom,
+      attendanceWeekdayHall,
+      attendanceWeekendZoom,
+      attendanceWeekendHall
+    );
+
+  const attendanceWeekdayTotals =
+    getAttendanceTotals(
+      attendanceWeekdayZoom,
+      attendanceWeekdayHall
+    );
+
+  const attendanceWeekendTotals =
+    getAttendanceTotals(
+      attendanceWeekendZoom,
+      attendanceWeekendHall
     );
 
   const attendanceWeekdayAverage =
     calculateAttendanceAverage(
-      attendanceWeekday,
+      attendanceWeekdayTotals,
       attendanceLastWeekIndex
     );
 
   const attendanceWeekendAverage =
     calculateAttendanceAverage(
-      attendanceWeekend,
+      attendanceWeekendTotals,
       attendanceLastWeekIndex
     );
 
@@ -2584,37 +2643,133 @@ const loadMonthCardsFromSupabase = async (
           </div>
 
           <div className="rounded-[32px] bg-white p-6 shadow-sm">
-            {[0, 1, 2, 3, 4].map((index) => (
-              <div key={index} className="mb-4 grid gap-3 sm:grid-cols-3">
-                <div className="font-medium text-[#426B8E]">
-                  Неделя {index + 1}
-                </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+                <thead>
+                  <tr className="text-[#426B8E]">
+                    <th className="px-3 py-2 text-left">
+                      Неделя
+                    </th>
+                    <th
+                      colSpan={3}
+                      className="rounded-t-2xl bg-[#EAF5FF] px-3 py-2 text-center"
+                    >
+                      Встреча в будний день
+                    </th>
+                    <th
+                      colSpan={3}
+                      className="rounded-t-2xl bg-[#EAF5FF] px-3 py-2 text-center"
+                    >
+                      Встреча в выходной день
+                    </th>
+                  </tr>
 
-                <input
-                  type="number"
-                  placeholder="Будний день"
-                  value={attendanceWeekday[index]}
-                  onChange={(e) => {
-                    const next = [...attendanceWeekday];
-                    next[index] = e.target.value === "" ? "" : Number(e.target.value);
-                    setAttendanceWeekday(next);
-                  }}
-                  className="rounded-2xl bg-[#F3FAFF] px-4 py-3 text-[#426B8E]"
-                />
+                  <tr className="text-xs text-slate-500">
+                    <th></th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Zoom
+                    </th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Зал
+                    </th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Всего
+                    </th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Zoom
+                    </th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Зал
+                    </th>
+                    <th className="bg-[#F3FAFF] px-3 py-2">
+                      Всего
+                    </th>
+                  </tr>
+                </thead>
 
-                <input
-                  type="number"
-                  placeholder="Выходной день"
-                  value={attendanceWeekend[index]}
-                  onChange={(e) => {
-                    const next = [...attendanceWeekend];
-                    next[index] = e.target.value === "" ? "" : Number(e.target.value);
-                    setAttendanceWeekend(next);
-                  }}
-                  className="rounded-2xl bg-[#F3FAFF] px-4 py-3 text-[#426B8E]"
-                />
-              </div>
-            ))}
+                <tbody>
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <tr key={index}>
+                      <td className="rounded-l-2xl bg-[#FAFCFE] px-3 py-2 font-medium text-[#426B8E]">
+                        Неделя {index + 1}
+                      </td>
+
+                      <td className="bg-[#FAFCFE] px-2 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={attendanceWeekdayZoom[index]}
+                          onChange={(e) => {
+                            const next = [...attendanceWeekdayZoom];
+                            next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                            setAttendanceWeekdayZoom(next);
+                          }}
+                          className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
+                        />
+                      </td>
+
+                      <td className="bg-[#FAFCFE] px-2 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={attendanceWeekdayHall[index]}
+                          onChange={(e) => {
+                            const next = [...attendanceWeekdayHall];
+                            next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                            setAttendanceWeekdayHall(next);
+                          }}
+                          className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
+                        />
+                      </td>
+
+                      <td className="bg-[#FAFCFE] px-2 py-2 text-center font-semibold text-[#426B8E]">
+                        {attendanceWeekdayTotals[index] === ""
+                          ? "—"
+                          : attendanceWeekdayTotals[index]}
+                      </td>
+
+                      <td className="bg-[#FAFCFE] px-2 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={attendanceWeekendZoom[index]}
+                          onChange={(e) => {
+                            const next = [...attendanceWeekendZoom];
+                            next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                            setAttendanceWeekendZoom(next);
+                          }}
+                          className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
+                        />
+                      </td>
+
+                      <td className="bg-[#FAFCFE] px-2 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={attendanceWeekendHall[index]}
+                          onChange={(e) => {
+                            const next = [...attendanceWeekendHall];
+                            next[index] = e.target.value === "" ? "" : Number(e.target.value);
+                            setAttendanceWeekendHall(next);
+                          }}
+                          className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
+                        />
+                      </td>
+
+                      <td className="rounded-r-2xl bg-[#FAFCFE] px-2 py-2 text-center font-semibold text-[#426B8E]">
+                        {attendanceWeekendTotals[index] === ""
+                          ? "—"
+                          : attendanceWeekendTotals[index]}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             <div className="mt-6 text-sm text-slate-500">
               Среднее посещение в будние дни: {attendanceWeekdayAverage ?? "—"}
@@ -2628,8 +2783,10 @@ const loadMonthCardsFromSupabase = async (
               onClick={async () => {
                 if (
                   hasMissingAttendanceData(
-                    attendanceWeekday,
-                    attendanceWeekend
+                    attendanceWeekdayZoom,
+                    attendanceWeekdayHall,
+                    attendanceWeekendZoom,
+                    attendanceWeekendHall
                   )
                 ) {
                   alert(
@@ -2640,31 +2797,57 @@ const loadMonthCardsFromSupabase = async (
 
                 const lastWeekIndex =
                   getLastFilledAttendanceWeekIndex(
-                    attendanceWeekday,
-                    attendanceWeekend
+                    attendanceWeekdayZoom,
+                    attendanceWeekdayHall,
+                    attendanceWeekendZoom,
+                    attendanceWeekendHall
+                  );
+
+                const weekdayZoomValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekdayZoom,
+                    lastWeekIndex
+                  );
+
+                const weekdayHallValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekdayHall,
+                    lastWeekIndex
+                  );
+
+                const weekendZoomValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekendZoom,
+                    lastWeekIndex
+                  );
+
+                const weekendHallValues =
+                  getCompletedAttendanceValues(
+                    attendanceWeekendHall,
+                    lastWeekIndex
                   );
 
                 const weekdayValues =
                   getCompletedAttendanceValues(
-                    attendanceWeekday,
+                    attendanceWeekdayTotals,
                     lastWeekIndex
                   );
 
                 const weekendValues =
                   getCompletedAttendanceValues(
-                    attendanceWeekend,
+                    attendanceWeekendTotals,
                     lastWeekIndex
                   );
 
                 const weekdayAverage =
                   calculateAttendanceAverage(
-                    attendanceWeekday,
+                    attendanceWeekdayTotals,
                     lastWeekIndex
                   );
 
                 const weekendAverage =
                   calculateAttendanceAverage(
-                    attendanceWeekend,
+                    attendanceWeekendTotals,
                     lastWeekIndex
                   );
 
@@ -2674,10 +2857,18 @@ const loadMonthCardsFromSupabase = async (
                     [{
                       service_year: selectedYear,
                       month: selectedMonth,
+                      weekday_zoom_values: weekdayZoomValues,
+                      weekday_hall_values: weekdayHallValues,
+                      weekday_total_values: weekdayValues,
+                      weekend_zoom_values: weekendZoomValues,
+                      weekend_hall_values: weekendHallValues,
+                      weekend_total_values: weekendValues,
                       weekday_values: weekdayValues,
                       weekend_values: weekendValues,
                       weekday_average: weekdayAverage,
                       weekend_average: weekendAverage,
+                      status: "completed",
+                      completed_at: new Date().toISOString(),
                       updated_at: new Date().toISOString(),
                     }],
                     { onConflict: "service_year,month" }
