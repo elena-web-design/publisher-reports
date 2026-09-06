@@ -2524,6 +2524,47 @@ const loadMonthCardsFromSupabase = async (
     loadAttendance();
   }, [selectedYear, selectedMonth]);
 
+    const saveAttendanceDraft = async (
+      weekdayZoomValues: (number | "")[],
+      weekdayHallValues: (number | "")[],
+      weekendZoomValues: (number | "")[],
+      weekendHallValues: (number | "")[]
+    ) => {
+      const weekdayValues = getAttendanceTotals(
+        weekdayZoomValues,
+        weekdayHallValues
+      );
+
+      const weekendValues = getAttendanceTotals(
+        weekendZoomValues,
+        weekendHallValues
+      );
+
+      const { error } = await supabase
+        .from("attendance_reports")
+        .upsert(
+          [{
+            service_year: selectedYear,
+            month: selectedMonth,
+            weekday_zoom_values: weekdayZoomValues,
+            weekday_hall_values: weekdayHallValues,
+            weekday_total_values: weekdayValues,
+            weekend_zoom_values: weekendZoomValues,
+            weekend_hall_values: weekendHallValues,
+            weekend_total_values: weekendValues,
+            weekday_values: weekdayValues,
+            weekend_values: weekendValues,
+            status: "draft",
+            updated_at: new Date().toISOString(),
+          }],
+          { onConflict: "service_year,month" }
+        );
+
+      if (error) {
+        console.error("Ошибка автосохранения посещаемости:", error);
+      }
+    };
+
   if (!mounted) return null;
   if (!isLoggedIn) {
     return (
@@ -2704,6 +2745,13 @@ const loadMonthCardsFromSupabase = async (
                             const next = [...attendanceWeekdayZoom];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekdayZoom(next);
+
+                            saveAttendanceDraft(
+                              next,
+                              attendanceWeekdayHall,
+                              attendanceWeekendZoom,
+                              attendanceWeekendHall
+                            );
                           }}
                           className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
                         />
@@ -2719,6 +2767,13 @@ const loadMonthCardsFromSupabase = async (
                             const next = [...attendanceWeekdayHall];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekdayHall(next);
+
+                            saveAttendanceDraft(
+                              attendanceWeekdayZoom,
+                              next,
+                              attendanceWeekendZoom,
+                              attendanceWeekendHall
+                            );
                           }}
                           className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
                         />
@@ -2740,6 +2795,13 @@ const loadMonthCardsFromSupabase = async (
                             const next = [...attendanceWeekendZoom];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekendZoom(next);
+
+                            saveAttendanceDraft(
+                              attendanceWeekdayZoom,
+                              attendanceWeekdayHall,
+                              next,
+                              attendanceWeekendHall
+                            );
                           }}
                           className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
                         />
@@ -2755,6 +2817,13 @@ const loadMonthCardsFromSupabase = async (
                             const next = [...attendanceWeekendHall];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekendHall(next);
+
+                            saveAttendanceDraft(
+                              attendanceWeekdayZoom,
+                              attendanceWeekdayHall,
+                              attendanceWeekendZoom,
+                              next
+                            );
                           }}
                           className="w-full rounded-xl bg-[#F3FAFF] px-3 py-2 text-center text-[#426B8E]"
                         />
