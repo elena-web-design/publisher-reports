@@ -2540,20 +2540,25 @@ const loadMonthCardsFromSupabase = async (
         weekendHallValues
       );
 
+      const cleanValues = (values: (number | "")[]) =>
+        values.map((value) => (value === "" ? null : value));
+
       const { error } = await supabase
         .from("attendance_reports")
         .upsert(
           [{
             service_year: selectedYear,
             month: selectedMonth,
-            weekday_zoom_values: weekdayZoomValues,
-            weekday_hall_values: weekdayHallValues,
-            weekday_total_values: weekdayValues,
-            weekend_zoom_values: weekendZoomValues,
-            weekend_hall_values: weekendHallValues,
-            weekend_total_values: weekendValues,
-            weekday_values: weekdayValues,
-            weekend_values: weekendValues,
+            weekday_zoom_values: cleanValues(weekdayZoomValues),
+            weekday_hall_values: cleanValues(weekdayHallValues),
+            weekday_total_values: cleanValues(weekdayValues),
+
+            weekend_zoom_values: cleanValues(weekendZoomValues),
+            weekend_hall_values: cleanValues(weekendHallValues),
+            weekend_total_values: cleanValues(weekendValues),
+
+            weekday_values: cleanValues(weekdayValues),
+            weekend_values: cleanValues(weekendValues),
             status: "draft",
             updated_at: new Date().toISOString(),
           }],
@@ -2741,12 +2746,12 @@ const loadMonthCardsFromSupabase = async (
                           min="0"
                           placeholder="0"
                           value={attendanceWeekdayZoom[index]}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const next = [...attendanceWeekdayZoom];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekdayZoom(next);
 
-                            saveAttendanceDraft(
+                            await saveAttendanceDraft(
                               next,
                               attendanceWeekdayHall,
                               attendanceWeekendZoom,
@@ -2763,12 +2768,12 @@ const loadMonthCardsFromSupabase = async (
                           min="0"
                           placeholder="0"
                           value={attendanceWeekdayHall[index]}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const next = [...attendanceWeekdayHall];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekdayHall(next);
 
-                            saveAttendanceDraft(
+                            await saveAttendanceDraft(
                               attendanceWeekdayZoom,
                               next,
                               attendanceWeekendZoom,
@@ -2791,12 +2796,12 @@ const loadMonthCardsFromSupabase = async (
                           min="0"
                           placeholder="0"
                           value={attendanceWeekendZoom[index]}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const next = [...attendanceWeekendZoom];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekendZoom(next);
 
-                            saveAttendanceDraft(
+                            await saveAttendanceDraft(
                               attendanceWeekdayZoom,
                               attendanceWeekdayHall,
                               next,
@@ -2813,12 +2818,12 @@ const loadMonthCardsFromSupabase = async (
                           min="0"
                           placeholder="0"
                           value={attendanceWeekendHall[index]}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const next = [...attendanceWeekendHall];
                             next[index] = e.target.value === "" ? "" : Number(e.target.value);
                             setAttendanceWeekendHall(next);
 
-                            saveAttendanceDraft(
+                            await saveAttendanceDraft(
                               attendanceWeekdayZoom,
                               attendanceWeekdayHall,
                               attendanceWeekendZoom,
