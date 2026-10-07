@@ -376,6 +376,14 @@ const getMonthsForServiceYear = (
     });
   };
 
+  useEffect(() => {
+    const monthsForYear = getMonthsForServiceYear(selectedYear);
+
+    if (!monthsForYear.includes(selectedMonth)) {
+      setSelectedMonth(monthsForYear[0]);
+    }
+  }, [selectedYear, selectedMonth]);
+
   const isInactive = (
     person: Person,
     serviceYear = selectedYear,
@@ -1301,16 +1309,16 @@ const loadMonthCardsFromSupabase = async (
   const saveMonthToArchive = async () => {  
     const existingRecord = archive.find(
     (item) =>
-    item.serviceYear === selectedYear &&
-    item.month === selectedMonth &&
+    item.serviceYear === reportYear &&
+    item.month === reportMonth &&
     item.group === selectedGroup
     );
 
     const { data: existingDbRecord } = await supabase
       .from("archive")
       .select("id")
-      .eq("service_year", selectedYear)
-      .eq("month", selectedMonth)
+      .eq("service_year", reportYear)
+      .eq("month", reportMonth)
       .eq("group_name", selectedGroup)
       .maybeSingle();
 
@@ -1333,8 +1341,8 @@ const loadMonthCardsFromSupabase = async (
         }));
 
     const archiveItem = {
-      serviceYear: selectedYear,
-      month: selectedMonth,
+      serviceYear: reportYear,
+      month: reportMonth,
       group: selectedGroup,
 
       reports: reportsSubmitted,
@@ -1362,7 +1370,7 @@ const loadMonthCardsFromSupabase = async (
     };
     if (existingRecord) {
 
-      if (isArchiveMonth(selectedMonth)) {
+      if (isArchiveMonth(reportMonth)) {
 
         const shouldUpdate = window.confirm(
           `Вы изменяете архивный отчёт.
@@ -1379,7 +1387,7 @@ const loadMonthCardsFromSupabase = async (
       } else {
 
         const shouldUpdate = window.confirm(
-          `Отчёт за ${selectedMonth} уже существует.
+          `Отчёт за ${reportMonth} уже существует.
 
         Хотите заменить его новыми данными?`
         );
@@ -1431,8 +1439,8 @@ const loadMonthCardsFromSupabase = async (
           .from("archive")
           .insert([
             {
-              service_year: selectedYear,
-              month: selectedMonth,
+              service_year: reportYear,
+              month: reportMonth,
               group_name: selectedGroup,
 
               reports: reportsSubmitted,
@@ -1471,11 +1479,18 @@ const loadMonthCardsFromSupabase = async (
         return;
       }
 
+      await supabase
+        .from("person_history")
+        .delete()
+        .eq("service_year", reportYear)
+        .eq("month", reportMonth)
+        .eq("group_name", selectedGroup);
+
       for (const person of filteredGroupPeople) {
         await savePersonHistory(
           person,
-          selectedMonth,
-          selectedYear
+          reportMonth,
+          reportYear
         );
       }
 
@@ -1488,11 +1503,11 @@ const loadMonthCardsFromSupabase = async (
 
       if (existingDbRecord) {
         await logAction(
-          `Изменил отчёт: ${selectedMonth} (${selectedGroup})`
+          `Изменил отчёт: ${reportMonth} (${selectedGroup})`
         );
       } else {
         await logAction(
-          `Сохранил отчёт: ${selectedMonth} (${selectedGroup})`
+          `Сохранил отчёт: ${reportMonth} (${selectedGroup})`
         );
       }
 
@@ -1501,8 +1516,8 @@ const loadMonthCardsFromSupabase = async (
       await loadAllPersonHistoryFromSupabase();
 
       await loadMonthCardsFromSupabase(
-        selectedYear,
-        selectedMonth,
+        reportYear,
+        reportMonth,
         selectedGroup
       );
 
@@ -1521,6 +1536,12 @@ const loadMonthCardsFromSupabase = async (
     await continueSave();
 
   }
+
+  const reportYear = selectedYear;
+  const monthsForReportYear = getMonthsForServiceYear(reportYear);
+  const reportMonth = monthsForReportYear.includes(selectedMonth)
+    ? selectedMonth
+    : monthsForReportYear[0];
 
   const createWorkbook = async (
     history: any[],
@@ -5069,11 +5090,26 @@ const loadMonthCardsFromSupabase = async (
                                 return;
                               }
 
+                              const { error: historyDeleteError } = await supabase
+                                .from("person_history")
+                                .delete()
+                                .eq("service_year", item.serviceYear)
+                                .eq("month", item.month)
+                                .eq("group_name", item.group);
+
+                              if (historyDeleteError) {
+                                console.error(historyDeleteError);
+                                alert("Архив удалён, но ошибка при удалении истории");
+                                return;
+                              }
+
                               await logAction(
                                 `Удалил архивную запись: ${item.month} (${item.group})`
                               );
 
                               await loadArchiveFromSupabase();
+
+                              await loadAllPersonHistoryFromSupabase();
 
                               setSaveMessageType("neutral");
                               setSaveMessage("🗑 Архивная запись успешно удалена.");
