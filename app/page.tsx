@@ -688,32 +688,49 @@ const loadAllPersonHistoryFromSupabase = async () => {
   setAllPersonHistory(data || []);
 };
 
-const getExportMonthOrder = () => {
+const getExportMonthsForPeriod = () => {
   const yearMonths = getMonthsForServiceYear(selectedYear);
 
   if (exportType === "serviceYear") {
-    return yearMonths;
+    return yearMonths.map((month) => ({
+      serviceYear: selectedYear,
+      month,
+    }));
   }
 
-  const currentIndex = yearMonths.indexOf(selectedMonth);
+  const currentIndex = allMonths.findIndex(
+    (item) =>
+      item.year === selectedYear &&
+      item.month === selectedMonth
+  );
 
   if (currentIndex === -1) {
-    return yearMonths.slice(-6);
+    return yearMonths.slice(0, 6).map((month) => ({
+      serviceYear: selectedYear,
+      month,
+    }));
   }
 
-  return yearMonths.slice(
-    Math.max(0, currentIndex - 5),
-    currentIndex + 1
-  );
+  return allMonths
+    .slice(
+      Math.max(0, currentIndex - 5),
+      currentIndex + 1
+    )
+    .map((item) => ({
+      serviceYear: item.year,
+      month: item.month,
+    }));
 };
 
+const getExportMonthOrder = () =>
+  getExportMonthsForPeriod().map((item) => item.month);
+
 const loadHistoryForExport = async () => {
-  const exportMonths = getExportMonthOrder();
+  const exportMonths = getExportMonthsForPeriod();
 
   const { data, error } = await supabase
     .from("person_history")
-    .select("*")
-    .eq("service_year", selectedYear);
+    .select("*");
 
   if (error) {
     console.error(
@@ -724,15 +741,11 @@ const loadHistoryForExport = async () => {
   }
 
   return (data || []).filter((item: any) =>
-    exportMonths.some((month) => {
-      const itemMonthName = String(item.month || "").split(" ")[0];
-      const exportMonthName = month.split(" ")[0];
-
-      return (
-        item.month === month ||
-        itemMonthName === exportMonthName
-      );
-    })
+    exportMonths.some(
+      (exportMonth) =>
+        item.service_year === exportMonth.serviceYear &&
+        item.month === exportMonth.month
+    )
   );
 };
 
@@ -1567,7 +1580,9 @@ const loadMonthCardsFromSupabase = async (
 
     const rowColors = new Map<number, "op" | "nv">();
 
-    for (const groupName of Object.keys(groupedByGroup).sort()) {
+    for (const groupName of Object.keys(groupedByGroup).sort(
+      (a, b) => getGroupNumber(a) - getGroupNumber(b)
+    )) {
 
       rows.push([]);
 
@@ -3105,7 +3120,7 @@ const loadMonthCardsFromSupabase = async (
     return (
       <div className="min-h-screen bg-[#EEF5FA] p-6">
 
-        <div className="mb-4 flex items-start justify-between">
+        <div className="mb-3 flex items-start justify-between gap-3">
           <button
             onClick={() => setSelectedPerson(null)}
             className="rounded-full bg-white px-4 py-2 text-sm text-[#426B8E] shadow-sm hover:bg-slate-50 transition"
@@ -3118,7 +3133,7 @@ const loadMonthCardsFromSupabase = async (
             personHistory.some((item) => item.assistant_pioneer)
           ) && (
 
-          <div className="min-w-[170px] rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
+          <div className="w-[150px] shrink-0 rounded-2xl bg-white p-3 shadow-sm border border-slate-100 sm:w-[170px] sm:p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">
               Годовой отчёт
             </div>
@@ -3139,10 +3154,10 @@ const loadMonthCardsFromSupabase = async (
         </div>
 
         <div
-          className={`mb-6 max-w-[60%] sm:max-w-none ${
+          className={`mb-5 max-w-[62%] sm:max-w-none ${
             selectedPerson.status === "regular_pioneer" ||
             personHistory.some((item) => item.assistant_pioneer)
-              ? "mt-4 sm:-mt-20"
+              ? "-mt-1 sm:-mt-20"
               : "-mt-2"
           }`}
         >
