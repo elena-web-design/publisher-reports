@@ -713,8 +713,7 @@ const loadHistoryForExport = async () => {
   const { data, error } = await supabase
     .from("person_history")
     .select("*")
-    .eq("service_year", selectedYear)
-    .in("month", exportMonths);
+    .eq("service_year", selectedYear);
 
   if (error) {
     console.error(
@@ -724,7 +723,17 @@ const loadHistoryForExport = async () => {
     return [];
   }
 
-  return data || [];
+  return (data || []).filter((item: any) =>
+    exportMonths.some((month) => {
+      const itemMonthName = String(item.month || "").split(" ")[0];
+      const exportMonthName = month.split(" ")[0];
+
+      return (
+        item.month === month ||
+        itemMonthName === exportMonthName
+      );
+    })
+  );
 };
 
 const loadMonthCardsFromSupabase = async (
@@ -2220,8 +2229,7 @@ const loadMonthCardsFromSupabase = async (
     const { data, error } = await supabase
       .from("attendance_reports")
       .select("*")
-      .eq("service_year", selectedYear)
-      .in("month", exportMonths);
+      .eq("service_year", selectedYear);
 
     if (error) {
       console.error("Ошибка выгрузки посещаемости:", error);
@@ -2229,12 +2237,20 @@ const loadMonthCardsFromSupabase = async (
       return;
     }
 
-    const reportsByMonth = new Map(
-      (data || []).map((item: any) => [
-        item.month,
-        item,
-      ])
-    );
+    const reportsByMonth = new Map<string, any>();
+
+    (data || []).forEach((item: any) => {
+      reportsByMonth.set(item.month, item);
+
+      const monthName = String(item.month || "").split(" ")[0];
+      const matchedMonth = exportMonths.find(
+        (month) => month.split(" ")[0] === monthName
+      );
+
+      if (matchedMonth) {
+        reportsByMonth.set(matchedMonth, item);
+      }
+    });
 
     const rows: any[][] = [
       [
@@ -2674,7 +2690,14 @@ const loadMonthCardsFromSupabase = async (
         <div className="mx-auto w-full max-w-7xl space-y-6">
           <div className="rounded-[32px] bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row">
-              <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
+              <select
+                value={selectedYear}
+                onChange={(e) => {
+                  const nextYear = e.target.value;
+                  setSelectedYear(nextYear);
+                  setSelectedMonth(getMonthsForServiceYear(nextYear)[0]);
+                }}
+              >
                 {serviceYears.map((year) => (
                   <option key={year} value={year}>{year}</option>
                 ))}
@@ -3116,15 +3139,21 @@ const loadMonthCardsFromSupabase = async (
         </div>
 
         <div
-          className={`mb-6 ${
+          className={`mb-6 max-w-[60%] sm:max-w-none ${
             selectedPerson.status === "regular_pioneer" ||
             personHistory.some((item) => item.assistant_pioneer)
-              ? "-mt-20"
+              ? "mt-4 sm:-mt-20"
               : "-mt-2"
           }`}
         >
-          <h1 className="text-2xl font-bold text-[#426B8E]">
-            {selectedPerson.name}
+          <h1 className="text-2xl font-bold leading-tight text-[#426B8E] break-words sm:whitespace-normal">
+            <span className="block sm:inline">
+              {selectedPerson.name.split(" ")[0]}
+            </span>
+
+            <span className="block sm:inline">
+              {selectedPerson.name.split(" ").slice(1).join(" ")}
+            </span>
           </h1>
 
           <p className="mt-1 text-sm text-slate-500">
@@ -3921,9 +3950,11 @@ const loadMonthCardsFromSupabase = async (
            <div>
               <select
                 value={selectedYear}
-                onChange={(e) =>
-                  setSelectedYear(e.target.value)
-                }
+                onChange={(e) => {
+                  const nextYear = e.target.value;
+                  setSelectedYear(nextYear);
+                  setSelectedMonth(getMonthsForServiceYear(nextYear)[0]);
+                }}
                 className="mb-3 rounded-2xl bg-white/80 px-4 py-2 text-base font-medium text-[#426B8E] outline-none"
               >
                 {serviceYears.map((year) => (
@@ -4915,9 +4946,11 @@ const loadMonthCardsFromSupabase = async (
               <div className="rounded-[32px] bg-white p-6 shadow-sm">
                 <select
                   value={selectedYear}
-                  onChange={(e) =>
-                    setSelectedYear(e.target.value)
-                  }
+                  onChange={(e) => {
+                    const nextYear = e.target.value;
+                    setSelectedYear(nextYear);
+                    setSelectedMonth(getMonthsForServiceYear(nextYear)[0]);
+                  }}
                   className="mb-4 rounded-2xl bg-[#FAFCFE] px-4 py-2 text-[#426B8E]"
                 >
                   {serviceYears.map((year) => (
