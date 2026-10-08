@@ -707,16 +707,12 @@ const deletePersonHistoryMonth = async (item: any) => {
 
   if (!shouldDelete) return;
 
-  const query = supabase
+  const { error } = await supabase
     .from("person_history")
-    .delete();
-
-  const { error } = item.id
-    ? await query.eq("id", item.id)
-    : await query
-        .eq("person_id", selectedPerson.id)
-        .eq("service_year", item.service_year)
-        .eq("month", item.month);
+    .delete()
+    .eq("person_id", selectedPerson.id)
+    .eq("service_year", item.service_year)
+    .eq("month", item.month);
 
   if (error) {
     console.error("Ошибка удаления истории:", error);
@@ -729,26 +725,24 @@ const deletePersonHistoryMonth = async (item: any) => {
   );
 
   setPersonHistory((prev) =>
-    prev.filter((historyItem) =>
-      item.id
-        ? historyItem.id !== item.id
-        : !(
-            historyItem.person_id === selectedPerson.id &&
-            historyItem.service_year === item.service_year &&
-            historyItem.month === item.month
-          )
+    prev.filter(
+      (historyItem) =>
+        !(
+          historyItem.person_id === selectedPerson.id &&
+          historyItem.service_year === item.service_year &&
+          historyItem.month === item.month
+        )
     )
   );
 
   setAllPersonHistory((prev) =>
-    prev.filter((historyItem) =>
-      item.id
-        ? historyItem.id !== item.id
-        : !(
-            historyItem.person_id === selectedPerson.id &&
-            historyItem.service_year === item.service_year &&
-            historyItem.month === item.month
-          )
+    prev.filter(
+      (historyItem) =>
+        !(
+          historyItem.person_id === selectedPerson.id &&
+          historyItem.service_year === item.service_year &&
+          historyItem.month === item.month
+        )
     )
   );
 
