@@ -3327,9 +3327,11 @@ const loadMonthCardsFromSupabase = async (
                           {isSecretary && (
                             <button
                               onClick={() => deletePersonHistoryMonth(item)}
-                              className="mt-2 rounded-xl bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100"
+                              title="Удалить месяц"
+                              aria-label="Удалить месяц"
+                              className="mt-2 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600"
                             >
-                              Удалить месяц
+                              🗑
                             </button>
                           )}
 
