@@ -475,6 +475,8 @@ const getMonthsForServiceYear = (
   const [archiveSearch, setArchiveSearch] =
     useState("");
 
+  const [isSavingMonth, setIsSavingMonth] = useState(false);
+
   const [openMenu, setOpenMenu] =
     useState<number | null>(null);
   const [openStatusMenu, setOpenStatusMenu] =
@@ -694,6 +696,64 @@ const loadAllPersonHistoryFromSupabase = async () => {
   }
 
   setAllPersonHistory(data || []);
+};
+
+const deletePersonHistoryMonth = async (item: any) => {
+  if (!selectedPerson?.id) return;
+
+  const shouldDelete = window.confirm(
+    `Удалить из истории "${selectedPerson.name}" запись за ${item.month}?`
+  );
+
+  if (!shouldDelete) return;
+
+  const query = supabase
+    .from("person_history")
+    .delete();
+
+  const { error } = item.id
+    ? await query.eq("id", item.id)
+    : await query
+        .eq("person_id", selectedPerson.id)
+        .eq("service_year", item.service_year)
+        .eq("month", item.month);
+
+  if (error) {
+    console.error("Ошибка удаления истории:", error);
+    alert("Ошибка удаления записи из истории");
+    return;
+  }
+
+  await logAction(
+    `Удалил запись из истории: ${selectedPerson.name}, ${item.month} (${item.service_year})`
+  );
+
+  setPersonHistory((prev) =>
+    prev.filter((historyItem) =>
+      item.id
+        ? historyItem.id !== item.id
+        : !(
+            historyItem.person_id === selectedPerson.id &&
+            historyItem.service_year === item.service_year &&
+            historyItem.month === item.month
+          )
+    )
+  );
+
+  setAllPersonHistory((prev) =>
+    prev.filter((historyItem) =>
+      item.id
+        ? historyItem.id !== item.id
+        : !(
+            historyItem.person_id === selectedPerson.id &&
+            historyItem.service_year === item.service_year &&
+            historyItem.month === item.month
+          )
+    )
+  );
+
+  await loadAllPersonHistoryFromSupabase();
+  await loadPersonHistory(selectedPerson.id);
 };
 
 const getExportMonthsForPeriod = () => {
@@ -1306,12 +1366,22 @@ const loadMonthCardsFromSupabase = async (
     regularStudies+
     unbaptizedStudies;
 
-  const saveMonthToArchive = async () => {  
+  const saveMonthToArchive = async () => {
+    if (isSavingMonth) return;
+
+    setIsSavingMonth(true);
+
+    const reportYear = selectedYear;
+    const monthsForReportYear = getMonthsForServiceYear(reportYear);
+    const reportMonth = monthsForReportYear.includes(selectedMonth)
+      ? selectedMonth
+      : monthsForReportYear[0];
+
     const existingRecord = archive.find(
-    (item) =>
-    item.serviceYear === reportYear &&
-    item.month === reportMonth &&
-    item.group === selectedGroup
+      (item) =>
+        item.serviceYear === reportYear &&
+        item.month === reportMonth &&
+        item.group === selectedGroup
     );
 
     const { data: existingDbRecord } = await supabase
@@ -1381,6 +1451,7 @@ const loadMonthCardsFromSupabase = async (
         );
 
         if (!shouldUpdate) {
+          setIsSavingMonth(false);
           return;
         }
 
@@ -1393,6 +1464,7 @@ const loadMonthCardsFromSupabase = async (
         );
 
         if (!shouldUpdate) {
+          setIsSavingMonth(false);
           return;
         }
 
@@ -1533,7 +1605,11 @@ const loadMonthCardsFromSupabase = async (
       }, 2000);
     };
 
-    await continueSave();
+    try {
+      await continueSave();
+    } finally {
+      setIsSavingMonth(false);
+    }
 
   }
 
@@ -3254,6 +3330,15 @@ const loadMonthCardsFromSupabase = async (
                             </span>
                           )}
 
+                          {isSecretary && (
+                            <button
+                              onClick={() => deletePersonHistoryMonth(item)}
+                              className="mt-2 rounded-xl bg-red-50 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-100"
+                            >
+                              Удалить месяц
+                            </button>
+                          )}
+
                         </div>
                       </div>
 
@@ -4845,9 +4930,14 @@ const loadMonthCardsFromSupabase = async (
               <div className="flex flex-col gap-3">
                 <button
                   onClick={saveMonthToArchive}
-                  className="rounded-2xl bg-[#4B84B6] px-4 py-3 text-white"
+                  disabled={isSavingMonth}
+                  className={`rounded-2xl px-4 py-3 text-white ${
+                    isSavingMonth
+                      ? "cursor-not-allowed bg-slate-300"
+                      : "bg-[#4B84B6]"
+                  }`}
                 >
-                  Сохранить месяц в архив
+                  {isSavingMonth ? "Сохраняем..." : "Сохранить месяц в архив"}
                 </button>
 
                 {isSecretary && (
