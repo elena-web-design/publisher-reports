@@ -269,6 +269,14 @@ const getMonthsForServiceYear = (
       .slice(0, lastWeekIndex + 1)
       .filter((value) => value !== "") as number[];
 
+  const getAttendanceValuesForSaving = (
+    values: (number | "")[],
+    lastWeekIndex: number
+  ) =>
+    values
+      .slice(0, lastWeekIndex + 1)
+      .map((value) => value === "" ? 0 : value);
+
   const calculateAttendanceAverage = (
     values: (number | "")[],
     lastWeekIndex: number
@@ -289,10 +297,16 @@ const getMonthsForServiceYear = (
   };
 
   const hasMissingAttendanceData = (
-    ...attendanceValues: (number | "")[][]
+    weekdayZoom: (number | "")[],
+    weekdayHall: (number | "")[],
+    weekendZoom: (number | "")[],
+    weekendHall: (number | "")[]
   ) => {
     const lastWeekIndex = getLastFilledAttendanceWeekIndex(
-      ...attendanceValues
+      weekdayZoom,
+      weekdayHall,
+      weekendZoom,
+      weekendHall
     );
 
     if (lastWeekIndex === -1) {
@@ -300,11 +314,13 @@ const getMonthsForServiceYear = (
     }
 
     for (let index = 0; index <= lastWeekIndex; index++) {
-      if (
-        attendanceValues.some(
-          (values) => values[index] === ""
-        )
-      ) {
+      const weekdayIsEmpty =
+        weekdayZoom[index] === "" && weekdayHall[index] === "";
+
+      const weekendIsEmpty =
+        weekendZoom[index] === "" && weekendHall[index] === "";
+
+      if (weekdayIsEmpty || weekendIsEmpty) {
         return true;
       }
     }
@@ -3007,25 +3023,25 @@ const loadMonthCardsFromSupabase = async (
                   );
 
                 const weekdayZoomValues =
-                  getCompletedAttendanceValues(
+                  getAttendanceValuesForSaving(
                     attendanceWeekdayZoom,
                     lastWeekIndex
                   );
 
                 const weekdayHallValues =
-                  getCompletedAttendanceValues(
+                   getAttendanceValuesForSaving(
                     attendanceWeekdayHall,
                     lastWeekIndex
                   );
 
                 const weekendZoomValues =
-                  getCompletedAttendanceValues(
+                   getAttendanceValuesForSaving(
                     attendanceWeekendZoom,
                     lastWeekIndex
                   );
 
                 const weekendHallValues =
-                  getCompletedAttendanceValues(
+                   getAttendanceValuesForSaving(
                     attendanceWeekendHall,
                     lastWeekIndex
                   );
@@ -4058,12 +4074,7 @@ const loadMonthCardsFromSupabase = async (
         
         <div className="grid gap-6 lg:grid-cols-2">
 
-          <div 
-            className="rounded-[32px] bg-white p-3 shadow-sm bg-cover bg-center"
-            style={{
-              backgroundImage: "url('/image.png')",
-            }}
-          >
+          <div className="rounded-[32px] bg-[#F3FAFF] p-3 shadow-sm">
            <div>
               <select
                 value={selectedYear}
