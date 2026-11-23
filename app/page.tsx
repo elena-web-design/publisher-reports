@@ -96,6 +96,20 @@ export default function Home() {
     "2033–2034",
     "2034–2035",
   ];
+
+  const getCurrentServiceYear = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const startYear =
+      currentMonth >= 8
+        ? currentYear
+        : currentYear - 1;
+
+    return `${startYear}–${startYear + 1}`;
+  };
+
   const monthNames = [
   "Сентябрь",
   "Октябрь",
@@ -3274,6 +3288,31 @@ const loadMonthCardsFromSupabase = async (
         ]
       )
     );
+
+    const currentServiceYear = getCurrentServiceYear();
+
+    const currentYearItems =
+      groupedHistory[currentServiceYear] || [];
+
+    const currentYearHours = currentYearItems
+      .filter(
+        (item: any) =>
+          item.status === "regular_pioneer" ||
+          item.assistant_pioneer
+      )
+      .reduce(
+        (sum: number, item: any) =>
+          sum + (Number(item.hours) || 0),
+        0
+      );
+
+    const hasCurrentPioneerReport =
+      selectedPerson.status === "regular_pioneer" ||
+      currentYearItems.some(
+        (item: any) =>
+          item.status === "regular_pioneer" ||
+          item.assistant_pioneer
+      );
     
     return (
       <div className="min-h-screen bg-[#EEF5FA] p-6">
@@ -3286,10 +3325,7 @@ const loadMonthCardsFromSupabase = async (
             ← Назад
           </button>
 
-          {(
-            selectedPerson.status === "regular_pioneer" ||
-            personHistory.some((item) => item.assistant_pioneer)
-          ) && (
+          {hasCurrentPioneerReport && (
 
           <div className="w-[150px] shrink-0 rounded-2xl bg-white p-3 shadow-sm border border-slate-100 sm:w-[170px] sm:p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">
@@ -3297,11 +3333,11 @@ const loadMonthCardsFromSupabase = async (
             </div>
 
             <div className="mt-2 text-sm font-medium text-[#426B8E]">
-              {selectedYear}
+              {currentServiceYear}
             </div>
 
             <div className="mt-3 text-3xl font-bold text-[#426B8E]">
-              {yearlyHours[selectedYear] || 0}
+              {currentYearHours}
             </div>
 
             <div className="text-xs text-slate-400">
@@ -3313,8 +3349,7 @@ const loadMonthCardsFromSupabase = async (
 
         <div
           className={`mb-5 max-w-[62%] sm:max-w-none ${
-            selectedPerson.status === "regular_pioneer" ||
-            personHistory.some((item) => item.assistant_pioneer)
+            hasCurrentPioneerReport
               ? "-mt-1 sm:-mt-20"
               : "-mt-2"
           }`}
