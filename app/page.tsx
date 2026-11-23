@@ -273,9 +273,7 @@ const getMonthsForServiceYear = (
     values: (number | "")[],
     lastWeekIndex: number
   ) =>
-    values
-      .slice(0, lastWeekIndex + 1)
-      .map((value) => value === "" ? 0 : value);
+    values.slice(0, lastWeekIndex + 1);
 
   const calculateAttendanceAverage = (
     values: (number | "")[],
@@ -2299,6 +2297,27 @@ const loadMonthCardsFromSupabase = async (
     return [];
   };
 
+  const isAttendanceMeetingAbsent = (
+    zoomValues: any[],
+    hallValues: any[],
+    index: number
+  ) => {
+    const zoomValue = zoomValues[index];
+    const hallValue = hallValues[index];
+
+    const zoomIsEmpty =
+      zoomValue === "" ||
+      zoomValue === null ||
+      zoomValue === undefined;
+
+    const hallIsEmpty =
+      hallValue === "" ||
+      hallValue === null ||
+      hallValue === undefined;
+
+    return zoomIsEmpty && hallIsEmpty;
+  };
+
   const getAttendanceCellValue = (
     values: any[],
     index: number
@@ -2436,37 +2455,69 @@ const loadMonthCardsFromSupabase = async (
       ]);
 
       for (let index = 0; index < 5; index++) {
+        const weekdayMeetingAbsent =
+          isAttendanceMeetingAbsent(
+            weekdayZoomValues,
+            weekdayHallValues,
+            index
+          );
+
+        const weekendMeetingAbsent =
+          isAttendanceMeetingAbsent(
+            weekendZoomValues,
+            weekendHallValues,
+            index
+          );
+
         rows.push([
           month,
           index + 1,
-          getAttendanceCellValue(
-            weekdayZoomValues,
-            index
-          ),
-          getAttendanceCellValue(
-            weekdayHallValues,
-            index
-          ),
-          getAttendanceTotalValue(
-            weekdayZoomValues,
-            weekdayHallValues,
-            weekdayTotalValues,
-            index
-          ),
-          getAttendanceCellValue(
-            weekendZoomValues,
-            index
-          ),
-          getAttendanceCellValue(
-            weekendHallValues,
-            index
-          ),
-          getAttendanceTotalValue(
-            weekendZoomValues,
-            weekendHallValues,
-            weekendTotalValues,
-            index
-          ),
+
+          weekdayMeetingAbsent
+            ? "—"
+            : getAttendanceCellValue(
+                weekdayZoomValues,
+                index
+              ),
+
+          weekdayMeetingAbsent
+            ? "—"
+            : getAttendanceCellValue(
+                weekdayHallValues,
+                index
+              ),
+
+          weekdayMeetingAbsent
+            ? "—"
+            : getAttendanceTotalValue(
+                weekdayZoomValues,
+                weekdayHallValues,
+                weekdayTotalValues,
+                index
+              ),
+
+          weekendMeetingAbsent
+            ? "—"
+            : getAttendanceCellValue(
+                weekendZoomValues,
+                index
+              ),
+
+          weekendMeetingAbsent
+            ? "—"
+            : getAttendanceCellValue(
+                weekendHallValues,
+                index
+              ),
+
+          weekendMeetingAbsent
+            ? "—"
+            : getAttendanceTotalValue(
+                weekendZoomValues,
+                weekendHallValues,
+                weekendTotalValues,
+                index
+              ),
         ]);
       }
 
