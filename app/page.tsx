@@ -284,7 +284,7 @@ const getMonthsForServiceYear = (
     const completedValues = getCompletedAttendanceValues(
       values,
       lastWeekIndex
-    );
+    ).filter((value) => value > 0);
 
     if (completedValues.length === 0) return null;
 
@@ -302,30 +302,30 @@ const getMonthsForServiceYear = (
     weekendZoom: (number | "")[],
     weekendHall: (number | "")[]
   ) => {
-    const lastWeekIndex = getLastFilledAttendanceWeekIndex(
+    const getMeetingCount = (
+      zoomValues: (number | "")[],
+      hallValues: (number | "")[]
+    ) =>
+      zoomValues.filter((zoomValue, index) => {
+        const total = getAttendanceTotal(
+          zoomValue,
+          hallValues[index]
+        );
+
+        return total !== "" && total > 0;
+      }).length;
+
+    const weekdayMeetingCount = getMeetingCount(
       weekdayZoom,
-      weekdayHall,
+      weekdayHall
+    );
+
+    const weekendMeetingCount = getMeetingCount(
       weekendZoom,
       weekendHall
     );
 
-    if (lastWeekIndex === -1) {
-      return true;
-    }
-
-    for (let index = 0; index <= lastWeekIndex; index++) {
-      const weekdayIsEmpty =
-        weekdayZoom[index] === "" && weekdayHall[index] === "";
-
-      const weekendIsEmpty =
-        weekendZoom[index] === "" && weekendHall[index] === "";
-
-      if (weekdayIsEmpty || weekendIsEmpty) {
-        return true;
-      }
-    }
-
-    return false;
+    return weekdayMeetingCount < 3 || weekendMeetingCount < 3;
   };
 
   const getAttendanceTotal = (
